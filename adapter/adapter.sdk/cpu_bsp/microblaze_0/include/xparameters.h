@@ -481,7 +481,7 @@
 #define XPAR_AXI_SD_0_DEVICE_ID 0
 #define XPAR_AXI_SD_0_S_AXI_BASEADDR 0x44A00000
 #define XPAR_AXI_SD_0_S_AXI_HIGHADDR 0x44A0FFFF
-#define XPAR_AXI_SD_0_RCA_ENABLED 1
+#define XPAR_AXI_SD_0_RCA_ENABLED 0
 
 
 /******************************************************************/

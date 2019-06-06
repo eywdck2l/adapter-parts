@@ -48,49 +48,21 @@
 #define AXI_SD_mReadReg(BaseAddress, RegOffset)                                \
   Xil_In32((BaseAddress) + (RegOffset))
 
-#define AXI_SD_CTRL_OFFSET 0
-#define AXI_SD_STATUS_OFFSET 4
-#define AXI_SD_CMD_RX_ARG_OFFSET 8
-#define AXI_SD_CMD_TX_CTRL_OFFSET 12
-#define AXI_SD_CMD_TX_DAT_OFFSET 16
-#define AXI_SD_RCA_OFFSET 20
+#define AXI_SD_CID_OFFSET 0
+#define AXI_SD_CSD_OFFSET 0x10
+#define AXI_SD_OCR_OFFSET 0x20
+#define AXI_SD_CSR_SET_BITS_OFFSET 0x30
+#define AXI_SD_CSR_CLR_BITS_OFFSET 0x34
+#define AXI_SD_STATUS_OFFSET 0x40
+#define AXI_SD_CMD_ARG_OFFSET 0x44
+#define AXI_SD_CSR_READ_OFFSET 0x48
 
-#define AXI_SD_STATE_IDLE 0
-#define AXI_SD_STATE_CMD_RECEIVED 1
-#define AXI_SD_STATE_WRITING_BUF_NOT_FULL 2
-#define AXI_SD_STATE_WRITING_BUF_FULL 3
-
-#define AXI_SD_CMD_TX_CTRL_DISABLE_CRC 0x1
-#define AXI_SD_CMD_TX_CTRL_NO_INDEX 0x2
-#define AXI_SD_CMD_TX_CTRL_POS_NCR 2
-#define AXI_SD_CMD_TX_CTRL_POS_RESP_LEN 8
-
-static inline uint_fast8_t sd_status_cmd_index(u32 status_reg) {
-  return status_reg & 0x3f;
-}
-
-static inline bool sd_status_cmd_is_from_host(u32 status_reg) {
-  return status_reg & 0x40;
-}
-
-static inline uint_fast8_t sd_status_crc_part(u32 status_reg) {
-  return (status_reg >> 9) & 0x7f;
-}
-
-static inline uint_fast8_t sd_status_state(u32 status_reg) {
-  return (status_reg >> 16) & 0x3;
-}
-
-static inline bool sd_status_crc_err(u32 status_reg) {
-  return status_reg & 0x80000;
-}
-
-static inline bool sd_status_rca_mismatch(u32 status_reg) {
-  return status_reg & 0x100000;
-}
-
-static inline bool sd_status_dat3_pullup_disabled(u32 status_reg) {
-  return status_reg & 0x1000000;
-}
+#define AXI_SD_STATUS_INACTIVE 0
+#define AXI_SD_STATUS_DEVICE_RESET 1
+#define AXI_SD_STATUS_GOT_CMD8 2
+#define AXI_SD_STATUS_CMD_UNREAD 3
+#define AXI_SD_STATUS_CMD_MISSED 4
+#define AXI_SD_STATUS_CMD_INDEX 8
+#define AXI_SD_STATUS_ACMD 14
 
 #endif // AXI_SD_H

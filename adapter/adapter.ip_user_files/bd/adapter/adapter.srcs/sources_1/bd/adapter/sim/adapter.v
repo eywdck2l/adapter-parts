@@ -1,8 +1,8 @@
 //Copyright 1986-2018 Xilinx, Inc. All Rights Reserved.
 //--------------------------------------------------------------------------------
 //Tool Version: Vivado v.2018.3 (lin64) Build 2405991 Thu Dec  6 23:36:41 MST 2018
-//Date        : Sun Apr 28 13:53:19 2019
-//Host        : db17480ec9ff running 64-bit unknown
+//Date        : Thu Jun  6 09:11:22 2019
+//Host        : 15cc7f9526f9 running 64-bit unknown
 //Command     : generate_target adapter.bd
 //Design      : adapter
 //Purpose     : IP block netlist
@@ -12,18 +12,18 @@
 (* CORE_GENERATION_INFO = "adapter,IP_Integrator,{x_ipVendor=xilinx.com,x_ipLibrary=BlockDiagram,x_ipName=adapter,x_ipVersion=1.00.a,x_ipLanguage=VERILOG,numBlks=20,numReposBlks=14,numNonXlnxBlks=1,numHierBlks=6,maxHierDepth=1,numSysgenBlks=0,numHlsBlks=0,numHdlrefBlks=0,numPkgbdBlks=0,bdsource=USER,da_axi4_cnt=2,da_board_cnt=4,da_mb_cnt=1,synth_mode=OOC_per_IP}" *) (* HW_HANDOFF = "adapter.hwdef" *) 
 module adapter
    (reset,
-    sd_host_if_clk,
-    sd_host_if_cmd,
-    sd_host_if_dat,
-    sd_host_if_dat3_pullup,
+    sd_device_if_clk,
+    sd_device_if_cmd,
+    sd_device_if_dat,
+    sd_device_if_dat3_pullup,
     sys_clock,
     usb_uart_rxd,
     usb_uart_txd);
   (* X_INTERFACE_INFO = "xilinx.com:signal:reset:1.0 RST.RESET RST" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME RST.RESET, INSERT_VIP 0, POLARITY ACTIVE_LOW" *) input reset;
-  (* X_INTERFACE_INFO = "xilinx.com:signal:data:1.0 DATA.SD_HOST_IF_CLK DATA" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME DATA.SD_HOST_IF_CLK, LAYERED_METADATA undef" *) input sd_host_if_clk;
-  (* X_INTERFACE_INFO = "xilinx.com:signal:data:1.0 DATA.SD_HOST_IF_CMD DATA" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME DATA.SD_HOST_IF_CMD, LAYERED_METADATA undef" *) inout sd_host_if_cmd;
-  (* X_INTERFACE_INFO = "xilinx.com:signal:data:1.0 DATA.SD_HOST_IF_DAT DATA" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME DATA.SD_HOST_IF_DAT, LAYERED_METADATA undef" *) inout [3:0]sd_host_if_dat;
-  output sd_host_if_dat3_pullup;
+  (* X_INTERFACE_INFO = "xilinx.com:signal:data:1.0 DATA.SD_DEVICE_IF_CLK DATA" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME DATA.SD_DEVICE_IF_CLK, LAYERED_METADATA undef" *) input sd_device_if_clk;
+  (* X_INTERFACE_INFO = "xilinx.com:signal:data:1.0 DATA.SD_DEVICE_IF_CMD DATA" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME DATA.SD_DEVICE_IF_CMD, LAYERED_METADATA undef" *) inout sd_device_if_cmd;
+  (* X_INTERFACE_INFO = "xilinx.com:signal:data:1.0 DATA.SD_DEVICE_IF_DAT DATA" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME DATA.SD_DEVICE_IF_DAT, LAYERED_METADATA undef" *) inout [3:0]sd_device_if_dat;
+  output sd_device_if_dat3_pullup;
   (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 CLK.SYS_CLOCK CLK" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME CLK.SYS_CLOCK, CLK_DOMAIN adapter_sys_clock, FREQ_HZ 12000000, INSERT_VIP 0, PHASE 0.000" *) input sys_clock;
   (* X_INTERFACE_INFO = "xilinx.com:interface:uart:1.0 usb_uart RxD" *) input usb_uart_rxd;
   (* X_INTERFACE_INFO = "xilinx.com:interface:uart:1.0 usb_uart TxD" *) output usb_uart_txd;
@@ -152,18 +152,18 @@ module adapter
 
   assign axi_uartlite_0_UART_RxD = usb_uart_rxd;
   assign reset_1 = reset;
-  assign sd_host_if_clk_1 = sd_host_if_clk;
-  assign sd_host_if_dat3_pullup = axi_sd_0_sd_dat3_pullup;
+  assign sd_device_if_dat3_pullup = axi_sd_0_sd_dat3_pullup;
+  assign sd_host_if_clk_1 = sd_device_if_clk;
   assign sys_clock_1 = sys_clock;
   assign usb_uart_txd = axi_uartlite_0_UART_TxD;
   adapter_axi_sd_0_0 axi_sd_0
        (.S_AXI_ACLK(microblaze_0_Clk),
-        .S_AXI_ARADDR(microblaze_0_axi_periph_M02_AXI_ARADDR[4:0]),
+        .S_AXI_ARADDR(microblaze_0_axi_periph_M02_AXI_ARADDR[6:0]),
         .S_AXI_ARESETN(rst_clk_wiz_1_100M_peripheral_aresetn),
         .S_AXI_ARPROT(microblaze_0_axi_periph_M02_AXI_ARPROT),
         .S_AXI_ARREADY(microblaze_0_axi_periph_M02_AXI_ARREADY),
         .S_AXI_ARVALID(microblaze_0_axi_periph_M02_AXI_ARVALID),
-        .S_AXI_AWADDR(microblaze_0_axi_periph_M02_AXI_AWADDR[4:0]),
+        .S_AXI_AWADDR(microblaze_0_axi_periph_M02_AXI_AWADDR[6:0]),
         .S_AXI_AWPROT(microblaze_0_axi_periph_M02_AXI_AWPROT),
         .S_AXI_AWREADY(microblaze_0_axi_periph_M02_AXI_AWREADY),
         .S_AXI_AWVALID(microblaze_0_axi_periph_M02_AXI_AWVALID),
@@ -180,8 +180,8 @@ module adapter
         .S_AXI_WVALID(microblaze_0_axi_periph_M02_AXI_WVALID),
         .interrupt(axi_sd_0_interrupt),
         .sd_clk(sd_host_if_clk_1),
-        .sd_cmd(sd_host_if_cmd),
-        .sd_dat(sd_host_if_dat[3:0]),
+        .sd_cmd(sd_device_if_cmd),
+        .sd_dat(sd_device_if_dat[3:0]),
         .sd_dat3_pullup(axi_sd_0_sd_dat3_pullup));
   adapter_axi_uartlite_0_0 axi_uartlite_0
        (.interrupt(axi_uartlite_0_interrupt),

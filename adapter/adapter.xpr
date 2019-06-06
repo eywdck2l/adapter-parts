@@ -40,13 +40,13 @@
     <Option Name="WTVcsLaunchSim" Val="0"/>
     <Option Name="WTRivieraLaunchSim" Val="0"/>
     <Option Name="WTActivehdlLaunchSim" Val="0"/>
-    <Option Name="WTXSimExportSim" Val="34"/>
-    <Option Name="WTModelSimExportSim" Val="34"/>
-    <Option Name="WTQuestaExportSim" Val="34"/>
-    <Option Name="WTIesExportSim" Val="34"/>
-    <Option Name="WTVcsExportSim" Val="34"/>
-    <Option Name="WTRivieraExportSim" Val="34"/>
-    <Option Name="WTActivehdlExportSim" Val="34"/>
+    <Option Name="WTXSimExportSim" Val="41"/>
+    <Option Name="WTModelSimExportSim" Val="41"/>
+    <Option Name="WTQuestaExportSim" Val="41"/>
+    <Option Name="WTIesExportSim" Val="41"/>
+    <Option Name="WTVcsExportSim" Val="41"/>
+    <Option Name="WTRivieraExportSim" Val="41"/>
+    <Option Name="WTActivehdlExportSim" Val="41"/>
     <Option Name="GenerateIPUpgradeLog" Val="TRUE"/>
     <Option Name="XSimRadix" Val="hex"/>
     <Option Name="XSimTimeUnit" Val="ns"/>
@@ -67,6 +67,15 @@
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
+        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_rst_clk_wiz_1_100M_0/adapter_rst_clk_wiz_1_100M_0.xci">
+          <Proxy FileSetName="adapter_rst_clk_wiz_1_100M_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_ilmb_v10_0/adapter_ilmb_v10_0.xci">
+          <Proxy FileSetName="adapter_ilmb_v10_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_axi_uartlite_0_0/adapter_axi_uartlite_0_0.xci">
+          <Proxy FileSetName="adapter_axi_uartlite_0_0"/>
+        </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_axi_sd_0_0/adapter_axi_sd_0_0.xci">
           <Proxy FileSetName="adapter_axi_sd_0_0"/>
         </CompFileExtendedInfo>
@@ -76,35 +85,26 @@
         <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_dlmb_v10_0/adapter_dlmb_v10_0.xci">
           <Proxy FileSetName="adapter_dlmb_v10_0"/>
         </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_rst_clk_wiz_1_100M_0/adapter_rst_clk_wiz_1_100M_0.xci">
-          <Proxy FileSetName="adapter_rst_clk_wiz_1_100M_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_axi_uartlite_0_0/adapter_axi_uartlite_0_0.xci">
-          <Proxy FileSetName="adapter_axi_uartlite_0_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_clk_wiz_1_0/adapter_clk_wiz_1_0.xci">
-          <Proxy FileSetName="adapter_clk_wiz_1_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_mdm_1_0/adapter_mdm_1_0.xci">
-          <Proxy FileSetName="adapter_mdm_1_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_microblaze_0_axi_intc_0/adapter_microblaze_0_axi_intc_0.xci">
-          <Proxy FileSetName="adapter_microblaze_0_axi_intc_0"/>
-        </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_ilmb_v10_0/adapter_ilmb_v10_0.xci">
-          <Proxy FileSetName="adapter_ilmb_v10_0"/>
+        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_ilmb_bram_if_cntlr_0/adapter_ilmb_bram_if_cntlr_0.xci">
+          <Proxy FileSetName="adapter_ilmb_bram_if_cntlr_0"/>
         </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_dlmb_bram_if_cntlr_0/adapter_dlmb_bram_if_cntlr_0.xci">
           <Proxy FileSetName="adapter_dlmb_bram_if_cntlr_0"/>
         </CompFileExtendedInfo>
-        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_ilmb_bram_if_cntlr_0/adapter_ilmb_bram_if_cntlr_0.xci">
-          <Proxy FileSetName="adapter_ilmb_bram_if_cntlr_0"/>
-        </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_lmb_bram_0/adapter_lmb_bram_0.xci">
           <Proxy FileSetName="adapter_lmb_bram_0"/>
         </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_microblaze_0_axi_intc_0/adapter_microblaze_0_axi_intc_0.xci">
+          <Proxy FileSetName="adapter_microblaze_0_axi_intc_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_clk_wiz_1_0/adapter_clk_wiz_1_0.xci">
+          <Proxy FileSetName="adapter_clk_wiz_1_0"/>
+        </CompFileExtendedInfo>
         <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_xbar_0/adapter_xbar_0.xci">
           <Proxy FileSetName="adapter_xbar_0"/>
+        </CompFileExtendedInfo>
+        <CompFileExtendedInfo CompFileName="adapter.bd" FileRelPathName="ip/adapter_mdm_1_0/adapter_mdm_1_0.xci">
+          <Proxy FileSetName="adapter_mdm_1_0"/>
         </CompFileExtendedInfo>
       </File>
       <File Path="$PSRCDIR/sources_1/bd/adapter/hdl/adapter_wrapper.v">

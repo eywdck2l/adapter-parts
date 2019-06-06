@@ -8,18 +8,20 @@
 typedef enum event_type_t {
   event_none = 0,
   event_sd_device_got_cmd,
+  event_sd_device_inactive,
+  event_sd_device_reset,
 } event_type_t;
 
-typedef struct sd_device_event_t {
-  uint32_t status_reg;
-  uint32_t rx_arg_reg;
-  uint32_t tx_ctrl_reg;
-} sd_device_event_t;
+typedef struct event_sd_device_cmd_t {
+  uint32_t controller_status;
+  uint32_t card_status;
+  uint32_t cmd_arg;
+} event_sd_device_cmd_t;
 
 typedef struct event_t {
   event_type_t type;
   union {
-    sd_device_event_t sd_device;
+    event_sd_device_cmd_t sd_device_cmd;
   } payload;
 } event_t;
 

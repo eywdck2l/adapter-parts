@@ -152,10 +152,9 @@ vcom -work xil_defaultlib -93 \
 "../../../../adapter.srcs/sources_1/bd/adapter/ip/adapter_axi_uartlite_0_0/sim/adapter_axi_uartlite_0_0.vhd" \
 
 vlog -work xil_defaultlib  -sv2k12 "+incdir+../../../../adapter.srcs/sources_1/bd/adapter/ipshared/ec67/hdl" "+incdir+../../../../adapter.srcs/sources_1/bd/adapter/ipshared/85a3" \
-"../../../../adapter.srcs/sources_1/bd/adapter/ipshared/4fa3/src/cmd_if.sv" \
-"../../../../adapter.srcs/sources_1/bd/adapter/ipshared/4fa3/src/controller.sv" \
-"../../../../adapter.srcs/sources_1/bd/adapter/ipshared/4fa3/src/controller_cmd.sv" \
-"../../../../adapter.srcs/sources_1/bd/adapter/ipshared/4fa3/src/axi_sd_v1_0_S_AXI.sv" \
+"../../../../adapter.srcs/sources_1/bd/adapter/ipshared/8fb0/src/cmd_if.sv" \
+"../../../../adapter.srcs/sources_1/bd/adapter/ipshared/8fb0/src/device.sv" \
+"../../../../adapter.srcs/sources_1/bd/adapter/ipshared/8fb0/src/axi_sd_v1_0_S_AXI.sv" \
 "../../../../adapter.srcs/sources_1/bd/adapter/ip/adapter_axi_sd_0_0/sim/adapter_axi_sd_0_0.sv" \
 
 vlog -work xil_defaultlib  -v2k5 "+incdir+../../../../adapter.srcs/sources_1/bd/adapter/ipshared/ec67/hdl" "+incdir+../../../../adapter.srcs/sources_1/bd/adapter/ipshared/85a3" \
