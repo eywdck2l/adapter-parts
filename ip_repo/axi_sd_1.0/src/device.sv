@@ -66,7 +66,9 @@ module responder
     output reg send_resp_o,
 
     input [31:0] card_status,
-    input [127:0] cid, csd,
+    input write_ram_en,
+    input [2:0] write_ram_addr,
+    input [31:0] write_ram_data,
     input [31:24] ocr_high_byte,
     input [15:0] rca,
 
@@ -86,6 +88,14 @@ module responder
     input clk,
     input resetn);
 
+   // ram[0:3] is CID, and ram[4:7] is CSD
+
+   reg [31:0] ram[0:7];
+
+   always @(posedge clk)
+     if (write_ram_en)
+       ram[write_ram_addr] <= {<<8{write_ram_data}};
+
    // Determine what response to send
 
    typedef enum {
@@ -98,7 +108,7 @@ module responder
                  resp_r7 = 6
                  } resp_types;
 
-   reg [2:0]    resp_cur, resp_next;
+   reg [2:0] resp_cur, resp_next;
 
    always @(*)
      case (cmd_index)
@@ -136,12 +146,12 @@ module responder
        resp_cur <= resp_next;
 
    // For ACMD41 and CMD2, the delay before the response NID has to be
-   // 5.  For other commands, 5 also work.  Thus we make it 5 the whole
+   // 5.  For other commands, 5 also works.  Thus we make it 5 the whole
    // time.  And subtract the 2 z clocks.
 
    assign resp_delay = 5 - 2;
 
-   reg [6:1]    resp_type_out;
+   reg [5:0]    resp_type_out;
    assign {sent_r7,
            sent_r6,
            sent_r3,
@@ -190,14 +200,12 @@ module responder
        end
      endcase // case (resp_next)
 
-   // The content of the response
+   // The response
 
-   wire [7:0] content_r1[0:4], content_r2_cid[0:16], content_r2_csd[0:16],
-         content_r3[0:5], content_r6[0:4], content_r7[0:4];
+   wire [7:0] content_r1[0:4], content_r3[0:5], content_r6[0:4],
+         content_r7[0:4];
 
    assign {>>{content_r1}} = {2'b00, cmd_index, card_status};
-   assign {>>{content_r2_cid}} = {8'h3f, cid[127:1], 1'b1};
-   assign {>>{content_r2_csd}} = {8'h3f, csd[127:1], 1'b1};
    assign {>>{content_r3}} = {8'h3f, ocr_high_byte[31:24], ocr_voltage_window,
                               8'h0, 8'hff};
    assign {>>{content_r6}} = {2'b00, cmd_index, rca, card_status[23:22],
@@ -215,26 +223,50 @@ module responder
         resp_len <= resp_len_next;
      end
 
+   reg [7:0]  resp_byte_next;
+   reg [4:0]  ram_pos;
+
+   always @(*) begin
+      case (resp_cur)
+        resp_r2_cid: begin
+           ram_pos[4] = 1'b0;
+           ram_pos[3:0] = resp_pos - 1;
+        end
+        resp_r2_csd: begin
+           ram_pos[4] = 1'b1;
+           ram_pos[3:0] = resp_pos - 1;
+        end
+        default:
+          ram_pos = 'x;
+      endcase // case (resp_cur)
+   end // always @ (*)
+
+   always @(*)
+     case (resp_cur)
+       resp_r1:
+         resp_byte_next = content_r1[resp_pos];
+       resp_r2_cid, resp_r2_csd:
+         if (resp_pos == 0)
+           resp_byte_next = 8'h3f;
+         else if (resp_pos < 17)
+           resp_byte_next = ram[ram_pos[4:2]][ram_pos[1:0] * 8 +: 8];
+         else
+           resp_byte_next = 'x;
+       resp_r3:
+         resp_byte_next = content_r3[resp_pos];
+       resp_r6:
+         resp_byte_next = content_r6[resp_pos];
+       resp_r7:
+         resp_byte_next = content_r7[resp_pos];
+       default:
+         resp_byte_next = 'x;
+     endcase // case (resp_cur)
+
    always @(posedge clk)
      if (!resetn)
        resp_byte <= 0;
      else
-       case (resp_cur)
-         resp_r1:
-           resp_byte <= content_r1[resp_pos];
-         resp_r2_cid:
-           resp_byte <= content_r2_cid[resp_pos];
-         resp_r2_csd:
-           resp_byte <= content_r2_csd[resp_pos];
-         resp_r3:
-           resp_byte <= content_r3[resp_pos];
-         resp_r6:
-           resp_byte <= content_r6[resp_pos];
-         resp_r7:
-           resp_byte <= content_r7[resp_pos];
-         default:
-           resp_byte <= 'x;
-       endcase // case (resp_cur)
+       resp_byte <= resp_byte_next;
 endmodule // responder
 
 module card_status_keeper
@@ -723,8 +755,13 @@ module device
     // are cleared when a response is sent can be set but not cleared
     // this way.
     input [31:0] csr_set_bits, csr_clr_bits,
-    input [127:0] cid, csd,
     input [31:24] ocr_high_byte,
+
+    // To write to CID and CSD.  Addresses 0 to 3 are CID.  4 to 7 are
+    // CSD.  Checksum is computed by the CPU.
+    input write_ram_en,
+    input [2:0] write_ram_addr,
+    input [31:0] write_ram_data,
 
     output [31:0] card_status_out,
     output reg got_cmd8,
@@ -907,8 +944,9 @@ module device
              .resp_delay,
              .send_resp_o(send_resp),
              .card_status(card_status_resp),
-             .cid,
-             .csd,
+             .write_ram_en,
+             .write_ram_addr,
+             .write_ram_data,
              .ocr_high_byte,
              .rca,
              .cmd_index,

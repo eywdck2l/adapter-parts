@@ -10,6 +10,10 @@ module test_command_responding;
    wire        clk;
    reg         resetn;
 
+   reg         write_ram_en;
+   reg [2:0]   write_ram_addr;
+   reg [31:0]  write_ram_data;
+
    wire [31:0] card_status_out;
 
    device #(.support_cmd((1 << 0) |
@@ -36,8 +40,9 @@ module test_command_responding;
                           (1 << 51)))
    dut(.csr_set_bits(0),
        .csr_clr_bits(0),
-       .cid(128'h2f6ee8e462fdf88d2964704ba1abf97f),
-       .csd(128'hd99cb163ef5d3108ba6612fd909660ed),
+       .write_ram_en,
+       .write_ram_addr,
+       .write_ram_data,
        .ocr_high_byte(8'hc0),
        .card_status_out,
        .sd_clk_i(sd_clk),
@@ -47,6 +52,10 @@ module test_command_responding;
        .clk,
        .resetn_in(resetn),
        .sd_dat_i('1));
+
+   // CID and CSD
+
+   localparam bit [255:0] mem_content = 256'h2f6ee8e462fdf88d2964704ba1abf97fd99cb163ef5d3108ba6612fd909660ed;
 
    reg [3:0]   clk_div;
 
@@ -74,8 +83,19 @@ module test_command_responding;
       resetn = 1'b0;
       writing_cmd = 1'b0;
       cmd_out = 1'b1;
+      write_ram_en = 1'b1;
 
       #32 resetn = 1'b1;
+
+      // Write to ram
+
+      for (i = 0; i < 8; i = i + 1) @(posedge clk) begin
+         write_ram_data <= mem_content[255-i*32-:32];
+         write_ram_addr <= i;
+      end
+
+      @(posedge clk)
+        write_ram_en <= 1'b0;
 
       for (i = 0; i < test_vector_cnt; i = i + 1) begin
          cmd_to_send = cmd_to_send_all[i];

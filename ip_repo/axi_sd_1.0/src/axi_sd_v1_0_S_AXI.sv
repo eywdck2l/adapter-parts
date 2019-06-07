@@ -366,15 +366,6 @@ module axi_sd_v1_0_S_AXI #
    assign addr_read = axi_araddr[C_S_AXI_ADDR_WIDTH-1:ADDR_LSB];
    assign addr_write = axi_awaddr[C_S_AXI_ADDR_WIDTH-1:ADDR_LSB];
 
-   // registers that are never cleared so RAM can be used
-
-   reg [31:0] reg_clear_never [reg_clear_never_start:reg_clear_never_end-1];
-
-   always @(posedge S_AXI_ACLK)
-     if (slv_reg_wren && addr_write >= reg_clear_never_start &&
-         addr_write < reg_clear_never_end)
-       reg_clear_never[addr_write] <= S_AXI_WDATA;
-
    // registers that are cleared on reset
 
    reg [31:0] reg_clear_reset [reg_clear_reset_start:reg_clear_reset_end-1];
@@ -407,10 +398,8 @@ module axi_sd_v1_0_S_AXI #
    wire [31:0] reg_read_only [reg_read_only_start:reg_read_only_end-1];
 
    always @(*)
-     if (addr_read >= reg_clear_never_start && addr_read < reg_clear_never_end)
-       reg_data_out = reg_clear_never[addr_read];
-     else if (addr_read >= reg_clear_reset_start &&
-              addr_read < reg_clear_reset_end)
+     if (addr_read >= reg_clear_reset_start &&
+         addr_read < reg_clear_reset_end)
        reg_data_out = reg_clear_reset[addr_read];
      else if (addr_read >= reg_read_only_start &&
               addr_read < reg_read_only_end)
@@ -444,9 +433,12 @@ module axi_sd_v1_0_S_AXI #
 
    device controller(.csr_set_bits(reg_clear_always[offset_csr_set_bits]),
                      .csr_clr_bits(reg_clear_always[offset_csr_clr_bits]),
-                     .cid({>>{reg_clear_never[offset_cid+:4]}}),
-                     .csd({>>{reg_clear_never[offset_csd+:4]}}),
                      .ocr_high_byte(reg_clear_reset[offset_ocr][31:24]),
+                     .write_ram_en(slv_reg_wren &&
+                                   addr_write >= reg_clear_never_start &&
+                                   addr_write < reg_clear_never_end),
+                     .write_ram_addr(addr_write - reg_clear_never_start),
+                     .write_ram_data(S_AXI_WDATA),
                      .card_status_out,
                      .got_cmd8,
                      .device_reset,
