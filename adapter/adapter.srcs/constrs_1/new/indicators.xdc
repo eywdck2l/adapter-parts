@@ -1,0 +1,2 @@
+set_property -dict { PACKAGE_PIN E18   IOSTANDARD LVCMOS33 } [get_ports { sd_device_interrupt_led }]; #IO_L16N_T2_A27_15 Sch=led[2]
+set_property -dict { PACKAGE_PIN L13   IOSTANDARD LVCMOS33 } [get_ports { sd_device_interrupt_out }]; #IO_0_14 Sch=ck_io[0]

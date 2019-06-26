@@ -52,7 +52,7 @@
   INTR_NON_CRITICAL_REENTRANT_STOP()
 
 #ifndef OUTPUT_BUFFER_SIZE
-#define OUTPUT_BUFFER_SIZE 512
+#define OUTPUT_BUFFER_SIZE 1024
 #endif
 
 // message to print in case of output buffer overflow

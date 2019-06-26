@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
 	<name>cpu</name>
-	<comment>Created by SDK v2018.3. cpu_bsp - microblaze_0</comment>
+	<comment>Created by SDK v2019.1. cpu_bsp - microblaze_0</comment>
 	<projects>
 		<project>cpu_bsp</project>
 	</projects>

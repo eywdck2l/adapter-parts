@@ -68,17 +68,15 @@ bool flush_printed_try(void) {
   bool notdone = 1;
 
   while (notdone) {
-    ATOMIC_BLOCK {
-      if (XUartLite_IsTransmitFull(STDOUT_BASEADDRESS)) {
+    if (XUartLite_IsTransmitFull(STDOUT_BASEADDRESS)) {
+      notdone = 0;
+      more_bytes_left = 1;
+    } else {
+      const int next_char = char_from_output_buf();
+      if (next_char == EOF)
         notdone = 0;
-        more_bytes_left = 1;
-      } else {
-        const int next_char = char_from_output_buf();
-        if (next_char == EOF)
-          notdone = 0;
-        else
-          send_byte_unbuffered(next_char);
-      }
+      else
+        send_byte_unbuffered(next_char);
     }
   }
 
@@ -86,7 +84,7 @@ bool flush_printed_try(void) {
 }
 
 // print a byte, not to be used in interrupt routines
-static void print_char_binmode(char ch) {
+static void putc_binmode(char ch) {
   size_t ch_pos;
 
   ATOMIC_BLOCK {
@@ -111,8 +109,8 @@ static void print_char_binmode(char ch) {
 // routines
 void outbyte(char ch) {
   if (ch == '\n')
-    print_char_binmode('\r');
-  print_char_binmode(ch);
+    putc_binmode('\r');
+  putc_binmode(ch);
 }
 
 // enable interrupts corresponding to the bits set in the mask without
@@ -131,7 +129,7 @@ static void enable_interrupts_noclear(uint32_t mask) {
 static void uart_intr_handler(void) __attribute__((fast_interrupt));
 
 // initialize the interrupt controller
-static void init_intc(void) {
+static void intc_init(void) {
   // this variable is not used besides to pass to XIntc_Initialize which
   // needs an XIntc instance
   XIntc InterruptController;
@@ -159,7 +157,9 @@ static void init_intc(void) {
 void platform_init(void) {
   print_reset();
 
-  init_intc();
+  sd_device_init();
+
+  intc_init();
 
   // enable interrupt in uart
   XUartLite_EnableIntr(STDOUT_BASEADDRESS);
@@ -177,11 +177,7 @@ void flush_printed(void) {
   }
 }
 
-static void uart_intr_handler(void) {
-  INTR_NON_CRITICAL_START();
-  flush_printed_try();
-  INTR_NON_CRITICAL_STOP();
-}
+static void uart_intr_handler(void) { flush_printed_try(); }
 
 // inbyte is not used in this project so I saved the effort of making it
 // non-blocking

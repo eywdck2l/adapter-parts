@@ -35,7 +35,7 @@ extern volatile size_t event_buf_start, event_buf_used;
 
 // Append an event to the buffer.  Return whether an error has occurred.
 // This function is probably used in an interrupt handler to record an
-// event, so it assumes it does not have ATOMIC_BLOCK.
+// event, so it assumes it does not need ATOMIC_BLOCK.
 static inline bool event_new(event_t ev) {
   size_t buf_used = event_buf_used;
   if (buf_used < EVENT_BUFFER_SIZE) {
