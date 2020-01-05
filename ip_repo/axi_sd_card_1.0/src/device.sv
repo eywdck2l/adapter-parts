@@ -52,7 +52,7 @@ endpackage // sd_defs
 // Respond to all commands
 module responder
   #(// the expected VHS field of CMD8
-    parameter bit [19:16] cmd8_vhs = 4'h1,
+    parameter bit [3:0] cmd8_vhs = 4'h1,
     parameter bit [23:8] ocr_voltage_window = 16'hff80)
    (input [4:0] resp_pos,
 
@@ -62,12 +62,12 @@ module responder
     output reg resp_no_crc,
     // length of response without crc in bytes
     output reg [4:0] resp_len,
-    output [3:0] resp_delay,
     output reg send_resp_o,
 
     input [31:0] card_status,
-    output [2:0] ram_addr,
-    input [31:0] ram_data,
+    output reg [4:0] ram_addr,
+    input [7:0] ram_data,
+    output reg ram_read_en,
     input [31:24] ocr_high_byte,
     input [15:0] rca,
 
@@ -89,17 +89,15 @@ module responder
 
    // Determine what response to send
 
-   typedef enum {
-                 resp_none = 0,
-                 resp_r1 = 1,
-                 resp_r2_cid = 2,
-                 resp_r2_csd = 3,
-                 resp_r3 = 4,
-                 resp_r6 = 5,
-                 resp_r7 = 6
-                 } resp_types;
-
-   reg [2:0] resp_cur, resp_next;
+   enum   logic [2:0] {
+                       resp_none = 0,
+                       resp_r1 = 1,
+                       resp_r2_cid = 2,
+                       resp_r2_csd = 3,
+                       resp_r3 = 4,
+                       resp_r6 = 5,
+                       resp_r7 = 6
+                       } resp_cur, resp_next;
 
    always @(*)
      case (cmd_index)
@@ -117,10 +115,7 @@ module responder
        3:
          resp_next = resp_r6;
        8:
-         if (cmd_arg[11:8] == cmd8_vhs)
-           resp_next = resp_r7;
-         else
-           resp_next = resp_none;
+         resp_next = resp_r7;
        41:
          if (acmd)
            resp_next = resp_r3;
@@ -167,32 +162,23 @@ module responder
         resp_cur <= resp_next;
      end
 
-   // For ACMD41 and CMD2, the delay before the response NID has to be
-   // 5.  For other commands, 5 also works.  Thus we make it 5 the whole
-   // time.  And subtract the 2 z clocks.
-
-   assign resp_delay = 5 - 2;
-
-   reg [5:0]    resp_type_out;
+   reg [6:0]    resp_type_out;
+   wire         sent_resp_none;
    assign {sent_r7,
            sent_r6,
            sent_r3,
            sent_r2_cid,
            sent_r2_csd,
-           sent_r1} = resp_type_out;
+           sent_r1,
+           sent_resp_none} = resp_type_out;
 
    always @(posedge clk)
      if (!resetn || !send_resp_i) begin
-        resp_type_out <= 6'b0;
+        resp_type_out <= 7'b0;
         send_resp_o <= 1'b0;
      end
      else begin
-        resp_type_out <= {resp_next == resp_r7,
-                          resp_next == resp_r6,
-                          resp_next == resp_r3,
-                          resp_next == resp_r2_csd,
-                          resp_next == resp_r2_cid,
-                          resp_next == resp_r1};
+        resp_type_out <= 'b1 << (resp_next);
         send_resp_o <= resp_next != resp_none;
      end // else: !if(!resetn || !send_resp_i)
 
@@ -209,52 +195,53 @@ module responder
    assign {>>{content_r7}} = {2'b00, cmd_index, 20'h00000, cmd8_vhs,
                               cmd_arg[7:0]};
 
-   reg [7:0]  resp_byte_next;
-   reg [4:0]  ram_byte_pos;
+   // RAM read address.  The first 16 bytes are CID.  The second 16
+   // bytes are CSD.
+
+   always @(posedge clk)
+     if (~resetn)
+       ram_read_en <= 1'b0;
+     else
+       ram_read_en <= resp_cur == resp_r2_cid ||
+                      resp_cur == resp_r2_csd;
 
    always @(*) begin
+      ram_addr[3:0] = resp_pos - 1;
       case (resp_cur)
-        resp_r2_cid: begin
-           ram_byte_pos[4] = 1'b0;
-           ram_byte_pos[3:0] = resp_pos - 1;
-        end
-        resp_r2_csd: begin
-           ram_byte_pos[4] = 1'b1;
-           ram_byte_pos[3:0] = resp_pos - 1;
-        end
+        resp_r2_cid:
+          ram_addr[4] = 1'b0;
+        resp_r2_csd:
+          ram_addr[4] = 1'b1;
         default:
-          ram_byte_pos = 'x;
+          ram_addr[4] = 1'bx;
       endcase // case (resp_cur)
    end // always @ (*)
 
-   assign ram_addr = ram_byte_pos[4:2];
-
-   always @(*)
-     case (resp_cur)
-       resp_r1:
-         resp_byte_next = content_r1[resp_pos];
-       resp_r2_cid, resp_r2_csd:
-         if (resp_pos == 0)
-           resp_byte_next = 8'h3f;
-         else if (resp_pos < 17)
-           resp_byte_next = ram_data[{~ram_byte_pos[1:0]} * 8 +: 8];
-         else
-           resp_byte_next = 'x;
-       resp_r3:
-         resp_byte_next = content_r3[resp_pos];
-       resp_r6:
-         resp_byte_next = content_r6[resp_pos];
-       resp_r7:
-         resp_byte_next = content_r7[resp_pos];
-       default:
-         resp_byte_next = 'x;
-     endcase // case (resp_cur)
+   // Response
 
    always @(posedge clk)
      if (!resetn)
        resp_byte <= 0;
      else
-       resp_byte <= resp_byte_next;
+       case (resp_cur)
+         resp_r1:
+           resp_byte = content_r1[resp_pos];
+         resp_r2_cid, resp_r2_csd:
+           if (resp_pos == 0)
+             resp_byte = 8'h3f;
+           else if (resp_pos < 17)
+             resp_byte = ram_data;
+           else
+             resp_byte = 'x;
+         resp_r3:
+           resp_byte = content_r3[resp_pos];
+         resp_r6:
+           resp_byte = content_r6[resp_pos];
+         resp_r7:
+           resp_byte = content_r7[resp_pos];
+         default:
+           resp_byte = 'x;
+       endcase // case (resp_cur)
 endmodule // responder
 
 module card_status_keeper
@@ -275,7 +262,12 @@ module card_status_keeper
    input acmd_defined,
    input sent_r1,
    input sent_r6,
-   input dat_start_read_block,
+
+   input ready_for_data_in,
+   // Set by the CPU to indicate when programming is done
+   input prog_done_in,
+   input dat_done,
+
    input [5:0] cmd_index,
    input [31:0] cmd_arg,
    input rca_match,
@@ -287,15 +279,6 @@ module card_status_keeper
 
    // status
    input initialization_done,
-
-   // data transfer finished
-   input data_reading_half_closed,
-   input data_reading_closed,
-   input data_writing_closed,
-
-   // The dat line should indicate busy.  It is low when we're reading
-   // and the buffer is full.  The other parts take care of it.
-   output dat_busy_out,
 
    input clk,
    input resetn);
@@ -315,9 +298,7 @@ module card_status_keeper
 
    assign got_cmd_error_free = got_valid_cmd && !err_resp_masked;
 
-   assign dat_busy_out = current_state == sd_state_prg;
-
-   // determine the next state
+   // Determine the next state
 
    reg [3:0]  current_state_next;
 
@@ -425,20 +406,22 @@ module card_status_keeper
         else
           case (current_state)
             sd_state_data:
-              if (data_writing_closed)
+              if (dat_done)
                 current_state_next = sd_state_tran;
             sd_state_rcv:
               // Not listed in the card state transition table in SD
               // Physical Layer Simplified Specification Ver. 6.00, but
               // shown in the diagram and is also reasonable.
-              if (data_reading_half_closed)
+              if (dat_done)
                 current_state_next = sd_state_prg;
             sd_state_prg:
-              if (data_reading_closed)
+              if (prog_done_in)
                 current_state_next = sd_state_tran;
             sd_state_dis:
-              if (data_reading_closed)
+              if (prog_done_in)
                 current_state_next = sd_state_stby;
+            default:
+              ;
           endcase // case (current_state)
      end // always @ (*)
 
@@ -493,21 +476,10 @@ module card_status_keeper
    // the response
 
    reg [31:0] card_status_resp_next;
-   reg        ready_for_data_next;
-
-   always @(*)
-     case (current_state)
-       sd_state_rcv:
-         ready_for_data_next = dat_start_read_block;
-       sd_state_prg, sd_state_dis:
-         ready_for_data_next = 1'b0;
-       default:
-         ready_for_data_next = 1'b1;
-     endcase // case (current_state)
 
    always @(*) begin
       card_status_read = card_status;
-      card_status_read[csr_ready_for_data] = ready_for_data_next;
+      card_status_read[csr_ready_for_data] = ready_for_data_in;
    end
 
    always @(*) begin
@@ -526,7 +498,7 @@ endmodule // card_status_keeper
 module rca_keeper
   #(parameter bit [15:0] rca_default = 16'haaaa)
    (output reg [15:0] rca,
-    output rca_match,
+    output reg rca_match,
     input [5:0] cmd_index,
     input [31:0] cmd_arg,
     input got_valid_cmd,
@@ -535,7 +507,11 @@ module rca_keeper
 
    import sd_defs::*;
 
-   assign rca_match = cmd_arg[31:16] == rca;
+   always @(posedge clk)
+     if (!resetn)
+       rca_match <= 1'b0;
+     else
+       rca_match <= cmd_arg[31:16] == rca;
 
    // To find the next RCA, we increment the current one.  It is
    // initially 0.
@@ -560,11 +536,14 @@ endmodule // rca_keeper
 
 module command_validator
   #(// commands to support
-    parameter bit [63:0] support_cmd, support_acmd)
+    parameter bit [63:0] support_cmd, support_acmd,
+    parameter bit [3:0] cmd8_vhs = 4'h1)
    (// type of command
     output reg valid, ignored, illegal,
     output reg acmd_defined,
+    output done,
     input [5:0] cmd_index,
+    input [31:0] cmd_arg,
     input rca_match,
     input acmd_expected,
     input [3:0] current_state,
@@ -580,6 +559,16 @@ module command_validator
    wire   acmd_defined_c = acmd_expected && support_acmd[cmd_index];
 
    reg    ignored_c, valid_c;
+
+   // Auxiliary information
+
+   reg    cmd8_vhs_match;
+
+   always @(posedge clk)
+     if (~resetn)
+       cmd8_vhs_match <= 1'b0;
+     else
+       cmd8_vhs_match <= cmd_arg[11:8] == cmd8_vhs;
 
    // determine whether the command is for us
 
@@ -647,7 +636,10 @@ module command_validator
                           current_state == sd_state_data ||
                           current_state == sd_state_prg;
             8:
-              valid_c = current_state == sd_state_idle;
+              if (cmd8_vhs_match)
+                valid_c = current_state == sd_state_idle;
+              else
+                valid_c = 1'b0;
             9, 10:
               valid_c = current_state == sd_state_stby;
             11:
@@ -678,7 +670,15 @@ module command_validator
           endcase // case (cmd_index)
        end // else: !if(!(support_cmd[cmd_index] ||...
 
-   // output
+   // Output.  2 clock cycles are needed for things to settle.
+
+   reg [1:0] update_phase;
+
+   always @(posedge clk)
+     if (~resetn)
+       update_phase <= '0;
+     else
+       update_phase <= (update_phase << 1) | update;
 
    always @(posedge clk)
      if (~resetn) begin
@@ -687,13 +687,14 @@ module command_validator
         illegal <= 1'b0;
         acmd_defined <= 1'b0;
      end
-     else if (update) begin
+     else if (update_phase[0]) begin
         valid <= valid_c;
         ignored <= ignored_c;
         illegal <= ~(valid_c | ignored_c);
         acmd_defined <= acmd_defined_c;
      end
 
+   assign done = update_phase[1];
 endmodule // command_validator
 
 module set_dat3_pullup
@@ -719,8 +720,8 @@ module inactive_keeper
     parameter bit [23:8] ocr_voltage_window,
     // The number of clocks resetn_out will be low after a CMD0
     parameter reset_clocks_cmd0 = 1)
-   (output resetn_out,
-    output is_inactive,
+   (output reg resetn_out,
+    output reg is_inactive,
     output got_reset_cmd,
 
     input [5:0] cmd_index,
@@ -732,7 +733,6 @@ module inactive_keeper
     input resetn_in);
 
    reg [reset_clocks_cmd0-1:0] got_cmd0;
-   reg                         inactive;
    reg                         got_acmd41_non_query;
    reg                         acmd41_bad_voltage_range,
                                got_acmd41_non_query_next;
@@ -761,85 +761,57 @@ module inactive_keeper
 
    always @(posedge clk)
      if (~resetn_in) begin
-        inactive <= 1'b0;
+        is_inactive <= 1'b0;
         got_acmd41_non_query <= 1'b0;
      end
      else if (got_valid_cmd) begin
-        inactive <= inactive || (got_valid_cmd && (cmd_index == 15 ||
-                                                   acmd41_bad_voltage_range));
+        is_inactive <= is_inactive ||
+                       (got_valid_cmd && (cmd_index == 15 ||
+                                          acmd41_bad_voltage_range));
         got_acmd41_non_query <= got_acmd41_non_query_next;
      end
 
-   assign resetn_out = resetn_in && !got_cmd0[reset_clocks_cmd0 - 1] &&
-                       !inactive;
-   assign is_inactive = inactive;
+   always @(posedge clk)
+     if (~resetn_in)
+       resetn_out <= 1'b0;
+     else
+       resetn_out <= !(!resetn_in || got_cmd0[reset_clocks_cmd0 - 1] ||
+                       is_inactive);
 endmodule // inactive_keeper
 
 module dat_controller
-  #(parameter word_size = 32,
-    parameter block_size_max = 4096 / word_size)
-   (// Data out
-    output [word_size - 1:0] data_out,
+  #(parameter word_size = 8)
+   (// Signals to control the DAT module
+    output reg dev_read_mode,
+    output reg dev_resetn,
+    output dat_opcode::block_type_t block_type,
+    output reg [2:0] block_size_exp,
 
-    // Writing or reading data may require the CPU.  It is possible that
-    // a read or write operation is interrupted by a command received on
-    // the SD bus, and then another one is started.  If the interval is
-    // too short, the CPU may still be writing or expecting data for the
-    // closed operation.  To prevent erronous data being written or data
-    // read being discarded in this case, this controller first goes
-    // into a half open state when a command to transfer data is
-    // received.  In the half open states, data written by the CPU is
-    // discarded, and no data will be read by the CPU.  sys_ack is high
-    // when the CPU reads the information about the data transfer.  Then
-    // the CPU terminates any ongoing data transfer to or from this
-    // module.  Then it sets sys_start.
-
-    input sys_ack,
-    input sys_start,
-
-    // Data input from the system
-    input [word_size - 1:0] data_in_sys,
-    // The data is new
-    input sys_write_en,
-    // The system may write data
-    output reg sys_may_write,
-    // The system has written all the data
-    input sys_no_more_data,
-    // The system wants to read data
-    input sys_read_not_full,
-    // The system may read more data
-    output reg sys_may_read,
-    output reading_half_closed,
-    output reading_closed,
-    output writing_closed,
-
-    // The device may start writing a new block
-    output reg dev_start_write,
-    input dev_wrote_new_word,
-    input dev_wrote_all,
-    // The device may start reading a new block
-    output reg dev_start_read,
-    // The device has read a new block, asserted after the last time
-    // data_in_dev_is_new was high in when a block is read
-    input dev_got_new_block,
-    input dev_read_crc_err,
-    // The device read a new word
-    input dev_read_new_word,
-    // Data input from the device
-    input [word_size - 1:0] data_in_dev,
-
-    output reg [31:0] dev_blocks_read,
     input [3:0] csr_current_state,
     // The number of blocks to read or write
     input [31:0] block_limit,
     input block_limit_used,
 
-    output reg dat_width_4,
-    output reg invalid_dat_width,
-    output dev_read_mode,
-    output dev_write_mode,
-    output dat_en,
-    output reg [$clog2(block_size_max * word_size + 1) - 1:0] block_size,
+    input fifo_out_almostfull,
+
+    // Start writing
+    input start_write_in,
+    // Start reading
+    input start_read_in,
+
+    // For masking the output FIFO's signals
+    output reg fifo_out_tready_masked,
+    output reg fifo_out_tvalid_masked,
+    input fifo_out_tready_in,
+    input fifo_out_tvalid_in,
+
+    output reg fifo_out_resetn,
+    output reg fifo_in_resetn,
+
+    // Whether the dat line should indicate busy.
+    output reg busy_out,
+    // The READY_FOR_DATA bit in the CSR
+    output reg ready_for_data,
 
     input [5:0] cmd_index,
     input [31:0] cmd_arg,
@@ -850,384 +822,159 @@ module dat_controller
     input resetn);
 
    import sd_defs::*;
+   import dat_opcode::*;
 
-   // The states
+   // Block type
 
-   enum   {
-           state_idle,
-           state_reading,
-           state_reading_half_closed,
-           state_reading_closed,
-           state_writing,
-           state_writing_half_closed,
-           state_writing_closed
-           } state, state_next;
-
-   enum   {
-           sys_state_closed,
-           sys_state_acknowledged,
-           sys_state_ready
-           } sys_state, sys_state_next;
-
-   wire   sys_ready = sys_state == sys_state_ready;
+   reg [2:0] block_size_exp_next;
+   reg [1:0] block_type_next;
+   reg       change_block_type;
 
    always @(*) begin
-      sys_state_next = sys_state;
-      case (sys_state)
-        sys_state_closed:
-          if (sys_ack)
-            sys_state_next = sys_state_acknowledged;
-        sys_state_acknowledged:
-          if (sys_start)
-            sys_state_next = sys_state_ready;
-        sys_state_ready:
-          ;
-        default:
-          sys_state_next = sys_state_closed;
-      endcase // case (sys_state)
-   end // always @ (*)
-
-   always @(posedge clk)
-     if (!resetn || !(state_next == state_reading ||
-                      state_next == state_reading_half_closed ||
-                      state_next == state_writing))
-       sys_state <= sys_state_closed;
-     else
-       sys_state <= sys_state_next;
-
-   // The FIFO
-
-   localparam fifo_addr_high = 9;
-   localparam block_addr_low = $clog2(block_size_max);
-
-   wire [word_size - 1:0]  fifo_data_out;
-   wire                    fifo_empty, fifo_full, fifo_resetn;
-   wire [fifo_addr_high:0] fifo_rdaddr_cur, fifo_rdaddr_next, fifo_wraddr;
-   reg [word_size - 1:0]   fifo_data_in;
-   reg                     fifo_read_en, fifo_write_en;
-
-   assign data_out = fifo_data_out;
-
-   fifo_fwft
-     #(.word_size(word_size),
-       .logdepth(fifo_addr_high))
-   fifo
-     (.data_out(fifo_data_out),
-      .addr_out_cur(fifo_rdaddr_cur),
-      .addr_out_next(fifo_rdaddr_next),
-      .empty(fifo_empty),
-      .read_en(fifo_read_en),
-      .data_in(fifo_data_in),
-      .addr_write(fifo_wraddr),
-      .full(fifo_full),
-      .write_en(fifo_write_en),
-      .clk(clk),
-      .resetn(fifo_resetn));
-
-   // Keep track of where the last good block ends.  Because while a
-   // block is being read on the dat lines, we don't know whether it's
-   // valid until we get the CRC.  Also keep track of how many blocks
-   // we've read for ACMD22.
-
-   reg [fifo_addr_high:block_addr_low] dev_last_block;
-
-   always @(posedge clk)
-     if (!resetn || !(state_next == state_reading ||
-                      state_next == state_reading_half_closed)) begin
-        dev_last_block <= 0;
-        dev_blocks_read <= 0;
-     end
-     else if (state == state_reading && dev_got_new_block &&
-              !dev_read_crc_err) begin
-        dev_last_block <= fifo_wraddr[fifo_addr_high:block_addr_low];
-        dev_blocks_read <= dev_blocks_read + 1;
-     end
-
-   // When to reset the fifo
-
-   assign fifo_resetn = !(!resetn ||
-                          !(state == state_reading ||
-                            state == state_reading_half_closed ||
-                            state == state_writing ||
-                            state == state_writing_half_closed));
-
-   // FIFO input
-
-   wire                   write_ok;
-   reg                    sys_may_write_next;
-
-   assign write_ok = !(!fifo_resetn || fifo_wraddr - fifo_rdaddr_next >
-                       (1 << fifo_addr_high) - block_size_max);
-
-   always @(*) begin
-      fifo_data_in = 'x;
-      fifo_write_en = 1'b0;
-      sys_may_write_next = 1'b0;
-      dev_start_read = 1'b0;
-      case (state)
-        state_writing: begin
-           fifo_data_in = data_in_sys;
-           fifo_write_en = sys_ready && sys_write_en;
-           sys_may_write_next = sys_ready && write_ok;
-        end
-        state_reading: begin
-           fifo_data_in = data_in_dev;
-           fifo_write_en = dev_read_new_word;
-           dev_start_read = write_ok;
-        end
-      endcase // case (state)
-   end // always @ (*)
-
-   always @(posedge clk)
-     if (~resetn)
-       sys_may_write <= 1'b0;
-     else
-       sys_may_write <= sys_may_write_next;
-
-   // When data is read
-
-   reg                                  read_available_next, sys_may_read_next;
-   wire                                 sys_fifo_read_en;
-
-   assign sys_fifo_read_en = sys_ready && sys_read_not_full && sys_may_read;
-
-   always @(*) begin
-      sys_may_read_next = 1'b0;
-      fifo_read_en = 1'b0;
-      dev_start_write = 1'b0;
-
-      if (sys_fifo_read_en)
-        read_available_next = (fifo_rdaddr_next >> block_addr_low) !=
-                              dev_last_block;
-      else
-        read_available_next = (fifo_rdaddr_cur >> block_addr_low) !=
-                              dev_last_block;
-
-      case (state)
-        state_reading, state_reading_half_closed: begin
-           sys_may_read_next = sys_ready && read_available_next;
-           fifo_read_en = sys_fifo_read_en;
-        end
-        state_writing: begin
-           fifo_read_en = dev_wrote_new_word;
-           dev_start_write = fifo_wraddr - fifo_rdaddr_next >= block_size_max;
-        end
-           state_writing_half_closed: begin
-              fifo_read_en = dev_wrote_new_word;
-              // When less than 4096 bits are to be written on the dat line,
-              // almostempty will always be 1.
-              dev_start_write = !fifo_empty;
-           end
-      endcase // case (state)
-   end // always @ (*)
-
-   always @(posedge clk)
-     if (~resetn)
-       sys_may_read <= 1'b0;
-     else
-       sys_may_read <= sys_may_read_next;
-
-   // Tell the system when to stop
-
-   assign reading_half_closed = state == state_reading_half_closed ||
-                                state == state_reading_closed;
-   assign reading_closed = state == state_reading_closed;
-   assign writing_closed = state == state_writing_closed;
-
-   // Tell the bus interface when to send or receive
-
-   assign dev_read_mode = state == state_reading;
-   assign dev_write_mode = state == state_writing ||
-                           state == state_writing_half_closed;
-   assign dat_en = !(!fifo_resetn) && (dev_read_mode || dev_write_mode);
-
-   // State changes
-
-   wire sd_state_writing, sd_state_reading;
-   assign sd_state_writing = csr_current_state == sd_state_data;
-   assign sd_state_reading = csr_current_state == sd_state_rcv;
-   reg  multi_block_mode;
-
-   always @(*) begin
-      state_next = state;
-      case (state)
-        state_idle:
-          if (sd_state_reading)
-            state_next = state_reading;
-          else if (sd_state_writing)
-            state_next = state_writing;
-        state_reading:
-          if (!sd_state_reading || (dev_got_new_block && dev_read_crc_err) ||
-              (multi_block_mode ?
-               (block_limit_used && dev_blocks_read >= block_limit) :
-               dev_blocks_read >= 1))
-            state_next = state_reading_half_closed;
-        state_reading_half_closed:
-          if (sys_ready && !read_available_next)
-            state_next = state_reading_closed;
-        state_reading_closed:
-          if (!(csr_current_state == sd_state_rcv ||
-                csr_current_state == sd_state_prg ||
-                csr_current_state == sd_state_dis))
-            state_next = state_idle;
-        state_writing:
-          if (!sd_state_writing)
-            state_next = state_idle;
-          else if (sys_ready && sys_no_more_data)
-            state_next = state_writing_half_closed;
-        state_writing_half_closed:
-          if (!sd_state_writing)
-            state_next = state_idle;
-          else if (dev_wrote_all && fifo_empty)
-            state_next = state_writing_closed;
-        state_writing_closed:
-          if (!sd_state_writing)
-            state_next = state_idle;
-        default:
-          state_next = state_idle;
-      endcase // case (state)
-   end // always @ (*)
-
-   always @(posedge clk)
-     if (~resetn)
-       state <= state_idle;
-     else
-       state <= state_next;
-
-   // Width
-
-   reg dat_width_4_next, invalid_dat_width_next;
-
-   always @(*) begin
-      invalid_dat_width_next = 1'b0;
-      case (cmd_arg[1:0])
-        2'b00:
-          dat_width_4_next = 1'b0;
-        2'b10:
-          dat_width_4_next = 1'b1;
-        default: begin
-           dat_width_4_next = dat_width_4;
-           invalid_dat_width_next = 1'b1;
-        end
-      endcase // case (cmd_arg[1:0])
-   end // always @ (*)
-
-   always @(posedge clk)
-     if (~resetn) begin
-        dat_width_4 <= 1'b0;
-        invalid_dat_width <= 1'b0;
-     end
-     else if (got_valid_cmd && cmd_index == 6 && acmd) begin
-        dat_width_4 <= dat_width_4_next;
-        invalid_dat_width <= invalid_dat_width_next;
-     end
-     else if (got_valid_cmd)
-       invalid_dat_width <= 1'b0;
-
-   // Block size
-
-   reg                                                multi_block_mode_next;
-   reg [$clog2(block_size_max * word_size + 1) - 1:0] block_size_next;
-
-   always @(*) begin
-      block_size_next = 'x;
-      multi_block_mode_next = 1'bx;
+      block_size_exp_next = 'x;
+      block_type_next = 'x;
+      change_block_type = 1'b1;
 
       case ({acmd, cmd_index})
-        30, {1'b1, 6'd22}:
-          block_size_next = 32;
-        {1'b1, 6'd51}:
-          block_size_next = 64;
-        26, 27:
-          block_size_next = 128;
-        6, 19, {1'b1, 6'd13}:
-          block_size_next = 512;
-        17, 18, 24, 25, 42, 48, 49, 56, 58, 59:
-          block_size_next = 4096;
-        default:
-          ;
-      endcase // case (cmd_index)
-
-      case (cmd_index)
+        30, {1'b1, 6'd22}: begin
+           block_size_exp_next = 3'h2;
+           block_type_next = small_block;
+        end
+        {1'b1, 6'd51}: begin
+           block_size_exp_next = 3'h3;
+           block_type_next = small_block;
+        end
+        26, 27: begin
+           block_size_exp_next = 3'h4;
+           block_type_next = small_block;
+        end
+        6, 19, {1'b1, 6'd13}: begin
+           block_size_exp_next = 3'h6;
+           block_type_next = small_block;
+        end
+        17, 24, 42, 48, 49, 56:
+          block_type_next = single_block;
         18, 25, 58, 59:
-          multi_block_mode_next = 1'b1;
+          block_type_next = block_limit_used ? multi_block_count :
+                            multi_block_no_count;
         default:
-          multi_block_mode_next = 1'b0;
-      endcase // case (cmd_index)
+          change_block_type = 1'b0;
+      endcase // case ({acmd, cmd_index})
    end // always @ (*)
 
    always @(posedge clk)
      if (~resetn) begin
-        block_size <= 4096;
-        multi_block_mode <= 1'b0;
+        block_size_exp <= 0;
+        block_type <= small_block;
      end
-     else if (state == state_idle && state_next != state_idle) begin
-        block_size <= block_size_next;
-        multi_block_mode <= multi_block_mode_next;
+     else if (got_valid_cmd & change_block_type) begin
+        block_size_exp <= block_size_exp_next;
+        block_type <= block_type_t'(block_type_next);
      end
-endmodule // dat_controller
 
-module fifo_fwft
-  #(parameter word_size = 1,
-    parameter logdepth = 1)
-   (output reg [word_size - 1:0] data_out,
-    // The address of the current output
-    output reg [logdepth:0] addr_out_cur,
-    // The address of the next output
-    output [logdepth:0] addr_out_next,
-    output reg empty,
-    input read_en,
+   // Control when to read and write
 
-    input [word_size - 1:0] data_in,
-    output reg [logdepth:0] addr_write,
-    output full,
-    input write_en,
+   reg dat_active_next, dev_read_mode_next, writing, reading, got_start_write,
+       got_start_read;
 
-    input clk,
-    input resetn);
+   always @(*) begin
+      writing = 1'b0;
+      reading = 1'b0;
 
-   reg [word_size - 1:0] ram[0:(1 << logdepth) - 1];
+      case (csr_current_state)
+        sd_state_data: begin
+           dat_active_next = 1'b1;
+           dev_read_mode_next = 1'b0;
+        end
+        sd_state_rcv: begin
+           dat_active_next = 1'b1;
+           dev_read_mode_next = 1'b1;
+        end
+        default: begin
+           dat_active_next = 1'b0;
+           dev_read_mode_next = 1'bx;
+        end
+      endcase // case (csr_current_state)
 
-   // An extra bit is used in the addresses to differentiate between
-   // full and empty.
-   reg [logdepth:0]      addr_read;
+      case (csr_current_state)
+        sd_state_data:
+          writing = 1'b1;
+        sd_state_rcv, sd_state_prg, sd_state_dis:
+          reading = 1'b1;
+        default:
+          ;
+      endcase // case (csr_current_state)
+   end // always @ (*)
 
-   // Whether the ram is empty.  It does not imply the entire FIFO is
-   // empty because there may be data in the output register.
-   wire                  ram_empty = addr_read == addr_write;
-   wire                  ram_full = (addr_read ^ (1 << logdepth)) == addr_write;
-   assign full = ram_full;
+   // Writing should only start when we know the data is for the right
+   // command.  It is signaled by `start_write_in' which is masked if
+   // the CPU has not read the current command.
 
-   // Read
+   always @(posedge clk)
+     if (~resetn | ~writing)
+       got_start_write <= 1'b0;
+     else if (start_write_in)
+       got_start_write <= 1'b1;
 
    always @(posedge clk)
      if (~resetn) begin
-        data_out <= 0;
-        addr_read <= 0;
-        addr_out_cur <= 0;
-        empty <= 1'b1;
+        dev_resetn <= 1'b0;
+        dev_read_mode <= 1'b0;
+        fifo_in_resetn <= 1'b0;
+        fifo_out_resetn <= 1'b0;
      end
-     else if (!ram_empty && (empty || read_en)) begin
-        data_out <= ram[addr_read[logdepth - 1:0]];
-        addr_read <= addr_read + 1;
-        addr_out_cur <= addr_read;
-        empty <= 1'b0;
+     else begin
+        dev_resetn <= dat_active_next;
+        dev_read_mode <= dev_read_mode_next;
+        fifo_in_resetn <= got_start_write;
+        fifo_out_resetn <= reading;
+     end // else: !if(~resetn)
+
+   // The busy out signal is not used in the receive state.  It is set
+   // high in the receive state so that the DAT module's state change
+   // from RCV to PRG does not have to be slower than that here, and the
+   // busy signal don DAT[0] can still be remain low during this change.
+   always @(posedge clk)
+     if (~resetn)
+       busy_out <= 1'b0;
+     else
+       busy_out <= csr_current_state == sd_state_prg ||
+                   (csr_current_state == sd_state_rcv && dev_resetn);
+
+   // Reading likewise requires the CPU to acknowledge the command.  But
+   // since the SD specification does not allow indicating busy at the
+   // start of a write command, we have to keep the output FIFO out of
+   // reset and mask its tvalid.
+
+   always @(posedge clk)
+     if (~resetn | ~reading)
+       got_start_read <= 1'b0;
+     else if (start_read_in)
+       got_start_read <= 1'b1;
+
+   always @(*)
+     if (~got_start_read) begin
+        fifo_out_tvalid_masked = 1'b0;
+        fifo_out_tready_masked = 1'b0;
      end
-     else if (ram_empty && read_en)
-       empty <= 1'b1;
-
-   assign addr_out_next = addr_read;
-
-   // Write
+     else begin
+        fifo_out_tvalid_masked = fifo_out_tvalid_in;
+        fifo_out_tready_masked = fifo_out_tready_in;
+     end
 
    always @(posedge clk)
      if (~resetn)
-       addr_write <= 0;
-     else if (!ram_full && write_en) begin
-        addr_write <= addr_write + 1;
-        ram[addr_write[logdepth - 1:0]] <= data_in;
-     end
-endmodule // fifo_fwft
+       ready_for_data <= 1'b1;
+     else
+       case (csr_current_state)
+         sd_state_prg, sd_state_dis:
+           ready_for_data <= 1'b0;
+         sd_state_rcv:
+           ready_for_data <= ~fifo_out_almostfull;
+         default:
+           ready_for_data <= 1'b1;
+       endcase // case (csr_current_state)
+endmodule // dat_controller
 
 // Check that the argument is within its range for some commands
 
@@ -1241,24 +988,24 @@ module range_check
    input clk,
    input resetn);
 
-   reg   out_of_range_next;
+   reg   out_of_range_1;
 
-   always @(*)
-     if (!acmd)
-       case (cmd_index)
-         17, 18, 24, 25:
-           out_of_range_next = cmd_arg > size;
-         default:
-           out_of_range_next = 1'b0;
-       endcase // case (cmd_index)
+   always @(posedge clk)
+     if (~resetn)
+       out_of_range_1 <= 1'b0;
      else
-       out_of_range_next = 1'b0;
+       out_of_range_1 <= cmd_arg > size;
 
    always @(posedge clk)
      if (~resetn)
        out_of_range <= 1'b0;
-     else if (got_valid_cmd)
-       out_of_range <= out_of_range_next;
+     else
+       case ({acmd, cmd_index})
+         17, 18, 24, 25:
+           out_of_range <= cmd_arg > size;
+         default:
+           out_of_range <= 1'b0;
+       endcase // case ({acmd, cmd_index})
 endmodule // range_check
 
 // Save the commands that involve the CPU and the necesary information
@@ -1267,35 +1014,45 @@ endmodule // range_check
 // The CPU will get a signal to wake up when the CMD25 is received.  But
 // maybe we have already received the CMD13 when the CPU reads the last
 // command received.  The CPU knows what data it should write by reading
-// the command saved here.  Only one command is saved at a time.
+// the command saved here.  Only one command is saved at a time.  If
+// another command arrives that needs to be saved, the previous will be
+// overwritten.  The rest of the design ensures that the first command
+// can be ignored in that case.
 
 module cmd_info_keeper
-  #(parameter bit [63:0] save_cmd = ((1 << 0) |
-                                     (1 << 6) |
-                                     (1 << 12) |
-                                     (1 << 17) |
-                                     (1 << 18) |
-                                     (1 << 23) |
-                                     (1 << 24) |
-                                     (1 << 25) |
-                                     (1 << 27) |
-                                     (1 << 38)),
-    parameter bit [63:0] save_acmd = ((1 << 13) |
-                                      (1 << 22) |
-                                      (1 << 23) |
-                                      (1 << 41) |
-                                      (1 << 51)))
+  #(parameter bit [63:0] save_cmd = '{
+                                      0: 1'b1,
+                                      6: 1'b1,
+                                      12: 1'b1,
+                                      15: 1'b1,
+                                      17: 1'b1,
+                                      18: 1'b1,
+                                      24: 1'b1,
+                                      25: 1'b1,
+                                      27: 1'b1,
+                                      38: 1'b1,
+                                      default: 1'b0
+                                      },
+    parameter bit [63:0] save_acmd = '{
+                                       13: 1'b1,
+                                       22: 1'b1,
+                                       41: 1'b1,
+                                       51: 1'b1,
+                                       default: 1'b0
+                                       })
    (output reg [5:0] saved_cmd_index,
     output reg [31:0] saved_cmd_arg,
     output reg saved_cmd_is_acmd,
     output reg new_cmd_saved,
-    output reg [31:0] erase_start, erase_end,
+    output [31:0] erase_start, erase_end,
     output reg erase_seq_error, erase_reset,
-    output reg [31:0] block_count,
-    output reg block_count_used,
-    output reg [22:0] pre_erase_count,
-    output reg pre_erase_count_used,
+    output [31:0] block_limit,
+    output block_limit_used,
+    output [22:0] pre_erase_count,
+    output pre_erase_count_used,
     output reg got_cmd8,
+    output reg dat_width_4,
+    output reg invalid_dat_width,
 
     input [5:0] cmd_index,
     input [31:0] cmd_arg,
@@ -1308,8 +1065,6 @@ module cmd_info_keeper
     input clk,
     input resetn);
 
-   genvar i;
-
    wire   save_current_cmd;
 
    // Erase sequence
@@ -1320,7 +1075,7 @@ module cmd_info_keeper
    reg [31:0]           erase_vars[0:1];
 
    generate
-      for (i = 0; i < 2; i = i + 1) begin:save_erase_vars
+      for (genvar i = 0; i < 2; i = i + 1) begin:save_erase_vars
          always @(posedge clk)
            if (~resetn)
              erase_vars[i] <= 0;
@@ -1355,13 +1110,13 @@ module cmd_info_keeper
          else begin
             erase_seq_error_next = 1'b1;
             erase_step_next = 0;
-         end
-      end
+         end // else: !if(cmd_index == erase_commands[erase_step])
+      end // if (is_erase_cmd)
       else begin
          if (erase_step != 0)
            erase_reset_next = 1'b1;
          erase_step_next = 0;
-      end
+      end // else: !if(is_erase_cmd)
    end // block: erase_seq
 
    always @(posedge clk)
@@ -1376,6 +1131,9 @@ module cmd_info_keeper
         erase_reset <= erase_reset_next;
      end
 
+   assign erase_start = erase_vars[0];
+   assign erase_end = erase_vars[1];
+
    // Block count
 
    // The spec does not specify the lifetime of a block count.  This
@@ -1389,47 +1147,92 @@ module cmd_info_keeper
    //    CMD55
    //    ACMD23
 
-   localparam [6:0] block_count_cmds[0:1] = '{22, 7'h40 | 22};
-   reg [31:0] block_count_vars[0:1];
-   reg        block_count_vars_used[0:1];
-   reg        cmd_discard_block_count;
-
-   always @(*)
-     case ({acmd, cmd_index})
-       13, 18, 23, 25, 55, 7'h40 | 23:
-         cmd_discard_block_count = 1'b0;
-       default:
-         cmd_discard_block_count = 1'b1;
-     endcase // case ({acmd, cmd_index})
-
-   generate
-      for (i = 0; i < 2; i = i + 1) begin:save_block_count_vars
-         always @(posedge clk)
-           if (!resetn || save_current_cmd ||
-               (got_valid_cmd && cmd_discard_block_count)) begin
-              block_count_vars[i] <= 0;
-              block_count_vars_used[i] <= 1'b0;
-           end
-           else if (got_valid_cmd &&
-                    {acmd, cmd_index} == block_count_cmds[i]) begin
-              block_count_vars[i] <= cmd_arg;
-              block_count_vars_used[i] <= 1'b1;
-           end
-      end // block: save_block_count_vars
-   endgenerate
-
-   // CMD8
-
-   reg        got_cmd8_1;
+   localparam [6:0] block_limit_cmds[0:1] = '{23, 7'h40 | 23};
+   reg [31:0] block_limit_vars[0:1];
+   reg        block_limit_vars_used[0:1];
+   reg        cmd_discard_block_limit;
 
    always @(posedge clk)
      if (~resetn)
-       got_cmd8_1 <= 1'b0;
-     else if (got_valid_cmd && cmd_index == 8)
-       got_cmd8_1 <= 1'b1;
+       cmd_discard_block_limit <= 1'b0;
+     else
+       case ({acmd, cmd_index})
+         13, 18, 23, 25, 55, 7'h40 | 23:
+           cmd_discard_block_limit <= 1'b0;
+         default:
+           cmd_discard_block_limit <= 1'b1;
+       endcase // case ({acmd, cmd_index})
 
-   // Save everything.  All outputs read by the CPU should change at the
-   // same time to prevent race conditions.
+   generate
+      for (genvar i = 0; i < 2; i = i + 1) begin:save_block_limit_vars
+         reg save;
+
+         always @(posedge clk)
+           if (~resetn)
+             save <= 1'b0;
+           else
+             save <= {acmd, cmd_index} == block_limit_cmds[i];
+
+         always @(posedge clk)
+           if (!resetn)
+             block_limit_vars[i] <= '0;
+           else if (got_valid_cmd && save)
+             block_limit_vars[i] <= cmd_arg;
+
+         always @(posedge clk)
+           if (!resetn ||
+               (got_valid_cmd && cmd_discard_block_limit))
+             block_limit_vars_used[i] <= 1'b0;
+           else if (got_valid_cmd && save)
+             block_limit_vars_used[i] <= 1'b1;
+      end // block: save_block_limit_vars
+   endgenerate
+
+   assign block_limit = block_limit_vars[0];
+   assign block_limit_used = block_limit_vars_used[0];
+   assign pre_erase_count = block_limit_vars[1][22:0];
+   assign pre_erase_count_used = block_limit_vars_used[1];
+
+   // CMD8
+
+   always @(posedge clk)
+     if (~resetn)
+       got_cmd8 <= 1'b0;
+     else if (got_valid_cmd && cmd_index == 8)
+       got_cmd8 <= 1'b1;
+
+   // DAT width
+
+   reg dat_width_4_next, invalid_dat_width_next;
+
+   always @(*) begin
+      invalid_dat_width_next = 1'b0;
+      case (cmd_arg[1:0])
+        2'b00:
+          dat_width_4_next = 1'b0;
+        2'b10:
+          dat_width_4_next = 1'b1;
+        default: begin
+           dat_width_4_next = dat_width_4;
+           invalid_dat_width_next = 1'b1;
+        end
+      endcase // case (cmd_arg[1:0])
+   end // always @ (*)
+
+   always @(posedge clk)
+     if (~resetn) begin
+        dat_width_4 <= 1'b0;
+        invalid_dat_width <= 1'b0;
+     end
+     else if (got_cmd_error_free && cmd_index == 6 && acmd) begin
+        dat_width_4 <= dat_width_4_next;
+        invalid_dat_width <= invalid_dat_width_next;
+     end
+     else if (got_valid_cmd)
+       invalid_dat_width <= 1'b0;
+
+   // Save everything.  The outputs may change at different times.  The
+   // parent module synchronizes the changes to prevent race conditions.
 
    assign save_current_cmd = got_cmd_error_free &&
                              (acmd ? save_acmd[cmd_index] : save_cmd[cmd_index]);
@@ -1439,69 +1242,62 @@ module cmd_info_keeper
         saved_cmd_index <= 0;
         saved_cmd_arg <= 0;
         saved_cmd_is_acmd <= 1'b0;
-        new_cmd_saved <= 1'b0;
-        erase_start <= 0;
-        erase_end <= 0;
-        got_cmd8 <= 1'b0;
-        block_count <= 0;
-        block_count_used <= 1'b0;
-        pre_erase_count <= 0;
-        pre_erase_count_used <= 1'b0;
-     end // if (~resetn)
+     end
      else if (save_current_cmd) begin
         saved_cmd_index <= cmd_index;
         saved_cmd_arg <= cmd_arg;
         saved_cmd_is_acmd <= acmd;
-        new_cmd_saved <= 1'b1;
-        erase_start <= erase_vars[0];
-        erase_end <= erase_vars[1];
-        got_cmd8 <= got_cmd8_1;
-        block_count <= block_count_vars[0];
-        block_count_used <= block_count_vars_used[0];
-        pre_erase_count <= block_count_vars[1][22:0];
-        pre_erase_count_used <= block_count_vars_used[1];
      end
-     else
+
+   always @(posedge clk)
+     if (~resetn)
        new_cmd_saved <= 1'b0;
+     else
+       new_cmd_saved <= save_current_cmd;
 endmodule // cmd_info_keeper
 
 module device
   #(// Commands to support
-    parameter bit [63:0] support_cmd = ((1 << 0) |
-                                        (1 << 2) |
-                                        (1 << 3) |
-                                        (1 << 4) |
-                                        (1 << 6) |
-                                        (1 << 7) |
-                                        (1 << 8) |
-                                        (1 << 9) |
-                                        (1 << 10) |
-                                        (1 << 12) |
-                                        (1 << 13) |
-                                        (1 << 15) |
-                                        (1 << 16) |
-                                        (1 << 17) |
-                                        (1 << 18) |
-                                        (1 << 23) |
-                                        (1 << 24) |
-                                        (1 << 25) |
-                                        (1 << 27) |
-                                        (1 << 32) |
-                                        (1 << 33) |
-                                        (1 << 38) |
-                                        (1 << 55) |
-                                        (1 << 56)),
-    parameter bit [63:0] support_acmd = ((1 << 6) |
-                                         (1 << 13) |
-                                         (1 << 22) |
-                                         (1 << 23) |
-                                         (1 << 41) |
-                                         (1 << 42) |
-                                         (1 << 51)),
+    parameter bit [63:0] support_cmd = '{
+                                         0: 1'b1,
+                                         2: 1'b1,
+                                         3: 1'b1,
+                                         4: 1'b1,
+                                         6: 1'b1,
+                                         7: 1'b1,
+                                         8: 1'b1,
+                                         9: 1'b1,
+                                         10: 1'b1,
+                                         12: 1'b1,
+                                         13: 1'b1,
+                                         15: 1'b1,
+                                         16: 1'b1,
+                                         17: 1'b1,
+                                         18: 1'b1,
+                                         23: 1'b1,
+                                         24: 1'b1,
+                                         25: 1'b1,
+                                         27: 1'b1,
+                                         32: 1'b1,
+                                         33: 1'b1,
+                                         38: 1'b1,
+                                         55: 1'b1,
+                                         56: 1'b1,
+                                         default: 1'b0
+                                         },
+    parameter bit [63:0] support_acmd = '{
+                                          6: 1'b1,
+                                          13: 1'b1,
+                                          22: 1'b1,
+                                          23: 1'b1,
+                                          41: 1'b1,
+                                          42: 1'b1,
+                                          51: 1'b1,
+                                          default: 1'b0
+                                          },
     // Voltage range required in ACMD41
     parameter bit [15:0] ocr_voltage_window = 16'hff80,
-    parameter dat_word_size = 32,
-    parameter dat_block_size_max = 4096 / dat_word_size)
+    parameter dat_word_size = 8)
    (// To manually set and clear bits in the card status.  Bits 12 to 9
     // current_state cannot be changed this way.  Some error bits which
     // are cleared when a response is sent can be set but not cleared
@@ -1512,10 +1308,11 @@ module device
     // allow 4294967296 blocks.
     input [31:0] size_in,
 
-    // Connection to a ram.  Addresses 0 to 3 are CID.  4 to 7 are CSD.
-    // Checksum is computed by the CPU.
-    output [2:0] ram_addr,
-    input [31:0] ram_data,
+    // Connection to a ram.  Addresses 0 to 15 are CID.  16 to 31 are
+    // CSD.  Checksum is computed by the CPU.
+    output [4:0] ram_addr,
+    input [7:0] ram_data,
+    output ram_read_en,
 
     // The most recently received command
     output last_cmd_is_acmd,
@@ -1536,22 +1333,33 @@ module device
     output got_reset_cmd,
     output is_inactive,
     output [31:0] erase_start, erase_end,
-    output [31:0] block_limit,
+    output [31:0] block_limit, block_count_done,
     output block_limit_used,
     output [22:0] pre_erase_count,
     output pre_erase_count_used,
     output got_cmd8,
+    output [dat_error_codes::width-1:0] dat_error_code,
+    output dat_done_new,
 
-    input ack_data_tran,
-    input start_data_tran,
-    input [dat_word_size - 1:0] data_in,
-    input data_write_en,
-    input no_more_write_data,
-    input data_read_en,
-    output [dat_word_size - 1:0] data_out,
-    output may_write_data,
-    output may_read_data,
-    output [31:0] dat_blocks_read,
+    // Data
+    input fifo_out_almostfull,
+    output [dat_word_size-1:0] out_tdata,
+    output out_tlast,
+    output out_tvalid,
+    input out_tready,
+    input [dat_word_size-1:0] in_tdata,
+    input in_tlast,
+    input in_tvalid,
+    output in_tready,
+    input prog_done_in,
+    input start_write_in,
+    input start_read_in,
+    output fifo_out_tready_masked,
+    output fifo_out_tvalid_masked,
+    input fifo_out_tready_in,
+    input fifo_out_tvalid_in,
+    output fifo_out_resetn,
+    output fifo_in_resetn,
 
     input sd_clk_i,
     input sd_cmd_i,
@@ -1579,7 +1387,7 @@ module device
            responding
            } state, state_next;
 
-   wire   cmd_received_good;
+   wire   cmd_received_good, validator_done;
    wire [5:0] cmd_index;
    wire [31:0] cmd_arg;
    wire        acmd_defined, cmd_valid, cmd_ignored, cmd_illegal;
@@ -1610,28 +1418,25 @@ module device
 
    // SD bus interface
 
-   wire        cmd_received, cmd_read_crc_err, resp_no_crc, send_resp;
+   wire        cmd_received, cmd_read_crc_err, resp_no_crc, send_resp, dat_done;
    wire [4:0]  resp_pos;
    wire [4:0]  resp_len_bytes;
-   wire [3:0]  resp_delay;
    wire [7:0]  resp_byte;
    reg         send_no_resp;
-   wire        dat_got_word, dat_got_block, dat_crc_err, dat_start_read_block,
-               dat_wrote_new_word, dat_wrote_all, dat_width_4,
-               dat_start_write_block, dat_read_mode, dat_write_mode, dat_en,
-               dat_busy_out;
-   wire [dat_word_size - 1:0]              dat_read_data, controller_data_out;
-   wire [$clog2(dat_block_size_max * dat_word_size + 1) - 1:0] dat_block_size;
+
+   wire [2:0]  dat_block_size_exp;
+   dat_opcode::block_type_t dat_block_type;
+   wire        dat_resetn, dat_read_mode, dat_busy_out, dat_width_4, cc_error;
 
    always @(posedge clk)
      if (~resetn)
        send_no_resp <= 1'b0;
      else
-       send_no_resp <= (state == validating_cmd && !cmd_valid) ||
+       send_no_resp <= (state == validating_cmd && validator_done &&
+                        !cmd_valid) ||
                        (state == responding && !send_resp);
 
-   sd_bus_interface #(.dat_word_size(dat_word_size),
-                      .dat_block_size_max(dat_block_size_max))
+   sd_bus_interface #(.dat_word_size(dat_word_size))
    sd_bus_interface(.got_new_cmd(cmd_received),
                     .cmd_crc_err(cmd_read_crc_err),
                     .cmd_index,
@@ -1641,25 +1446,30 @@ module device
                     .cmd_resp_pos(resp_pos),
                     .cmd_resp_byte(resp_byte),
                     .cmd_resp_len(resp_len_bytes),
-                    .cmd_resp_delay(resp_delay),
                     .resp_no_crc(resp_no_crc),
                     .resp_start(send_resp),
                     .resp_none(send_no_resp),
-                    .dat_got_word,
-                    .dat_got_block,
-                    .dat_crc_err,
-                    .dat_read_data,
-                    .dat_start_read_block,
-                    .dat_write_data(controller_data_out),
-                    .dat_block_size,
-                    .dat_wrote_new_word,
-                    .dat_wrote_all,
-                    .dat_width_4,
-                    .dat_start_write_block,
+                    .fifo_out_almostfull,
+                    .out_tdata,
+                    .out_tlast,
+                    .out_tvalid,
+                    .out_tready,
+                    .in_tdata,
+                    .in_tlast,
+                    .in_tvalid,
+                    .in_tready,
+                    .dat_block_size_exp,
+                    .dat_block_type,
+                    .dat_block_limit(block_limit),
+                    .dat_block_count_done(block_count_done),
                     .dat_read_mode,
-                    .dat_write_mode,
-                    .dat_en,
                     .busy_in(dat_busy_out),
+                    .dat_width_4,
+                    .cc_error_out(cc_error),
+                    .dat_error_code,
+                    .dat_done,
+                    .dat_done_new,
+                    .dat_resetn,
                     .sd_clk_i,
                     .sd_cmd_i,
                     .sd_cmd_o,
@@ -1708,10 +1518,9 @@ module device
 
    wire         initialization_done = ocr_high_byte[31];
    wire         sent_r1, sent_r6;
-   wire         data_reading_half_closed, data_reading_closed,
-                data_writing_closed;
    reg          cmd_crc_err_stb, cmd_illegal_stb, cmd_ignored_stb;
    wire         invalid_dat_width;
+   wire         ready_for_data;
    wire         erase_seq_error, erase_reset, out_of_range;
 
    always @(posedge clk)
@@ -1740,22 +1549,23 @@ module device
         .got_cmd_error_free,
         .sent_r1,
         .sent_r6,
-        .dat_start_read_block,
+        .ready_for_data_in(ready_for_data),
+        .prog_done_in,
+        .dat_done,
         .cmd_index,
         .cmd_arg,
         .rca_match,
-        .errors_response_mode(32'b0 |
-                              ((invalid_dat_width || out_of_range) <<
-                               csr_out_of_range) |
-                              (erase_seq_error << csr_erase_seq_error) |
-                              (erase_reset << csr_erase_reset)),
+        .errors_response_mode('{
+                                csr_out_of_range: invalid_dat_width |
+                                out_of_range,
+                                csr_erase_seq_error: erase_seq_error,
+                                csr_erase_reset : erase_reset,
+                                csr_cc_error: cc_error,
+                                default: 0
+                                }),
         .ext_set_bits(csr_set_bits),
         .ext_clear_bits(csr_clr_bits),
         .initialization_done,
-        .data_reading_half_closed,
-        .data_reading_closed,
-        .data_writing_closed,
-        .dat_busy_out,
         .clk,
         .resetn);
 
@@ -1769,11 +1579,13 @@ module device
                                    .erase_end,
                                    .erase_seq_error,
                                    .erase_reset,
-                                   .block_count(block_limit),
-                                   .block_count_used(block_limit_used),
+                                   .block_limit,
+                                   .block_limit_used,
                                    .pre_erase_count,
                                    .pre_erase_count_used,
                                    .got_cmd8,
+                                   .dat_width_4,
+                                   .invalid_dat_width,
                                    .cmd_index,
                                    .cmd_arg,
                                    .acmd(acmd_defined),
@@ -1801,7 +1613,9 @@ module device
                      .illegal(cmd_illegal),
                      .ignored(cmd_ignored),
                      .acmd_defined(acmd_defined),
+                     .done(validator_done),
                      .cmd_index,
+                     .cmd_arg,
                      .rca_match,
                      .acmd_expected,
                      .current_state(csr_current_state),
@@ -1816,11 +1630,11 @@ module device
              .resp_byte,
              .resp_no_crc,
              .resp_len(resp_len_bytes),
-             .resp_delay,
              .send_resp_o(send_resp),
              .card_status(card_status_resp),
              .ram_addr,
              .ram_data,
+             .ram_read_en,
              .ocr_high_byte,
              .rca,
              .cmd_index,
@@ -1839,42 +1653,29 @@ module device
 
    // Data
 
-   dat_controller #(.word_size(dat_word_size),
-                    .block_size_max(dat_block_size_max))
-   dat_controller(.data_out(controller_data_out),
-                  .sys_ack(ack_data_tran),
-                  .sys_start(start_data_tran),
-                  .data_in_sys(data_in),
-                  .sys_write_en(data_write_en),
-                  .sys_may_write(may_write_data),
-                  .sys_no_more_data(no_more_write_data),
-                  .sys_read_not_full(data_read_en),
-                  .sys_may_read(may_read_data),
-                  .reading_half_closed(data_reading_half_closed),
-                  .reading_closed(data_reading_closed),
-                  .writing_closed(data_writing_closed),
-                  .dev_start_write(dat_start_write_block),
-                  .dev_wrote_new_word(dat_wrote_new_word),
-                  .dev_wrote_all(dat_wrote_all),
-                  .dev_start_read(dat_start_read_block),
-                  .dev_got_new_block(dat_got_block),
-                  .dev_read_crc_err(dat_crc_err),
-                  .dev_read_new_word(dat_got_word),
-                  .data_in_dev(dat_read_data),
-                  .dev_blocks_read(dat_blocks_read),
+   dat_controller #(.word_size(dat_word_size))
+   dat_controller(.dev_read_mode(dat_read_mode),
+                  .dev_resetn(dat_resetn),
+                  .block_type(dat_block_type),
+                  .block_size_exp(dat_block_size_exp),
                   .csr_current_state,
                   .block_limit,
                   .block_limit_used,
-                  .dat_width_4,
-                  .invalid_dat_width,
-                  .dev_read_mode(dat_read_mode),
-                  .dev_write_mode(dat_write_mode),
-                  .dat_en,
-                  .block_size(dat_block_size),
+                  .fifo_out_almostfull,
+                  .start_write_in,
+                  .start_read_in,
+                  .fifo_out_tready_masked,
+                  .fifo_out_tvalid_masked,
+                  .fifo_out_tready_in,
+                  .fifo_out_tvalid_in,
+                  .fifo_out_resetn,
+                  .fifo_in_resetn,
+                  .busy_out(dat_busy_out),
+                  .ready_for_data,
                   .cmd_index,
                   .cmd_arg,
                   .acmd(acmd_defined),
-                  .got_valid_cmd(update_1),
+                  .got_valid_cmd(update_2),
                   .clk,
                   .resetn);
 
@@ -1897,10 +1698,12 @@ module device
           if (cmd_received_good)
             state_next = validating_cmd;
         validating_cmd:
-          if (cmd_valid)
-            state_next = updating_status_1;
-          else
-            state_next = idle;
+          if (validator_done) begin
+             if (cmd_valid)
+               state_next = updating_status_1;
+             else
+               state_next = idle;
+          end
         updating_status_1:
           state_next = updating_status_2;
         updating_status_2:
@@ -1924,13 +1727,12 @@ module device
    assign last_cmd_is_acmd = acmd_defined;
    assign last_cmd_index = cmd_index;
    assign last_cmd_arg = cmd_arg;
-   assign data_out = controller_data_out;
    assign last_cmd_ignored = cmd_ignored;
    assign last_cmd_valid = cmd_valid;
 
    always @(posedge clk)
      if (~resetn)
-       got_new_cmd_out = 1'b0;
+       got_new_cmd_out <= 1'b0;
      else
-       got_new_cmd_out = state == validating_cmd;
+       got_new_cmd_out <= update_2;
 endmodule // device
