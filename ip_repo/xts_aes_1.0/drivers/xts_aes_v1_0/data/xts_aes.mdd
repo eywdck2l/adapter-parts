@@ -1,0 +1,10 @@
+
+
+OPTION psf_version = 2.1;
+
+BEGIN DRIVER xts_aes
+	OPTION supported_peripherals = (xts_aes);
+	OPTION copyfiles = all;
+	OPTION VERSION = 1.0;
+	OPTION NAME = xts_aes;
+END DRIVER
