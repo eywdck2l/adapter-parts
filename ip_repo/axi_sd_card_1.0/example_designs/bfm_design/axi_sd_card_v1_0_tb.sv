@@ -10,20 +10,71 @@ import axi_sd_card_v1_0_bfm_1_axi4stream_vip_slv_0_pkg::*;
 
 module axi_sd_card_v1_0_tb();
 
+   localparam REG_SAVED_START = 9;
+   localparam REG_SAVED_END = 18;
+
+   localparam OFFSET_STATUS = 8;
+   localparam OFFSET_CSR_READ = 9;
+   localparam OFFSET_CMD_INDEX = 10;
+   localparam OFFSET_SAVED_CMD_ARG = 11;
+   localparam OFFSET_LAST_CMD_ARG = 12;
+   localparam OFFSET_ERASE_START = 13;
+   localparam OFFSET_ERASE_END = 14;
+   localparam OFFSET_BLOCK_LIMIT = 15;
+   localparam OFFSET_PRE_ERASE_COUNT = 16;
+   localparam OFFSET_DAT_BLOCKS_TRANSFERRED = 17;
+   localparam OFFSET_OCR = 18;
+   localparam OFFSET_SIZE = 19;
+   localparam OFFSET_INTR_EN = 20;
+   localparam OFFSET_CONTROL = 21;
+   localparam OFFSET_CSR_SET_BITS = 22;
+   localparam OFFSET_CSR_CLR_BITS = 23;
+
+   localparam STATUS_LAST_CMD_IGNORED = 0;
+   localparam STATUS_LAST_CMD_VALID = 1;
+   localparam STATUS_SAVED_CMD_UNREAD = 2;
+   localparam STATUS_SAVED_CMD_MISSED = 3;
+   localparam STATUS_ANY_CMD_UNREAD = 4;
+   localparam STATUS_ANY_CMD_MISSED = 5;
+   localparam STATUS_GOT_NEW_CMD12 = 6;
+   localparam STATUS_INACTIVE = 7;
+   localparam STATUS_GOT_RESET = 8;
+   localparam STATUS_GOT_CMD8 = 9;
+   localparam STATUS_BLOCK_LIMIT_USED = 10;
+   localparam STATUS_PRE_ERASE_COUNT_USED = 11;
+   localparam STATUS_GOT_START_WRITE = 12;
+   localparam STATUS_GOT_START_READ = 13;
+   localparam STATUS_DAT_DONE = 14;
+   localparam STATUS_DAT_BLOCK_DONE = 15;
+   localparam STATUS_DAT_ERROR_CODE = 16;
+
+   localparam bit [31:0] STATUS_EVENT_BITS = '{
+                                               STATUS_SAVED_CMD_UNREAD: 1'b1,
+                                               STATUS_SAVED_CMD_MISSED: 1'b1,
+                                               STATUS_ANY_CMD_UNREAD: 1'b1,
+                                               STATUS_ANY_CMD_MISSED: 1'b1,
+                                               STATUS_GOT_NEW_CMD12: 1'b1,
+                                               STATUS_INACTIVE: 1'b1,
+                                               STATUS_GOT_RESET: 1'b1,
+                                               STATUS_DAT_DONE: 1'b1,
+                                               STATUS_DAT_BLOCK_DONE: 1'b1,
+                                               default: 1'b0
+                                               };
+
    localparam agent_verbosity = 0;
 
-   logic clock;
-   logic sd_clk;
-   logic resetn;
+   logic                 clock;
+   logic                 sd_clk;
+   logic                 resetn;
 
    axi_sd_card_v1_0_bfm_1_master_0_0_mst_t mst_agent_0;
    axi_sd_card_v1_0_bfm_1_axi4stream_vip_mst_0_mst_t axis_writer;
    axi_sd_card_v1_0_bfm_1_axi4stream_vip_slv_0_slv_t axis_reader;
 
-   wire  sd_cmd;
-   wire [3:0] sd_dat;
-   wire       sd_dat3_pullup;
-   wire       interrupt;
+   wire                  sd_cmd;
+   wire [3:0]            sd_dat;
+   wire                  sd_dat3_pullup;
+   wire                  interrupt;
 
    pullup pullup_cmd(sd_cmd);
    pullup pullup_dat[3:0](sd_dat);
@@ -40,7 +91,7 @@ module axi_sd_card_v1_0_tb();
 
    // Clock and reset
 
-   bit sd_clock_slow;
+   bit                   sd_clock_slow;
 
    initial begin
       resetn <= 1'b0;
@@ -54,10 +105,10 @@ module axi_sd_card_v1_0_tb();
    always #5 clock <= ~clock;
 
    always
-      if (sd_clock_slow)
-        #1250 sd_clk <= ~sd_clk;
-      else
-        #20 sd_clk <= ~sd_clk;
+     if (sd_clock_slow)
+       #1250 sd_clk <= ~sd_clk;
+     else
+       #20 sd_clk <= ~sd_clk;
 
    // Verify the DAT pullup works correctly
 
@@ -131,7 +182,7 @@ module axi_sd_card_v1_0_tb();
    check_cmd_x:
      assert property(@(negedge sd_clk) !$isunknown(sd_cmd));
 
-   bit    dat_width_4;
+   bit dat_width_4;
    initial
      dat_width_4 = 1'b0;
 
@@ -149,7 +200,7 @@ module axi_sd_card_v1_0_tb();
    task automatic read_data_line(output [7:0] data[],
                                  // Size in bits
                                  input int size);
-      reg [4111:0]                         line_data[0:3];
+      logic [4111:0]                       line_data[0:3];
 
       assume(size % 4096 == 0 || size < 4096);
 
@@ -281,10 +332,10 @@ module axi_sd_card_v1_0_tb();
    endtask : read_reg
 
    logic [31:0]                      reg_status;
-   logic [31:0]                      reg_saved[9:16];
+   logic [31:0]                      reg_saved[REG_SAVED_START:REG_SAVED_END-1];
 
    task automatic read_status;
-      read_reg(reg_status, 8);
+      read_reg(reg_status, OFFSET_STATUS);
       foreach (reg_saved[i])
         read_reg(reg_saved[i], i);
    endtask : read_status
@@ -295,22 +346,29 @@ module axi_sd_card_v1_0_tb();
 
    localparam bit [31:0] card_size = 32'hebe88701;
 
-   typedef struct {
-      bit [31:0]  status_may_change;
-      bit [31:0]  status_high;
-      bit         reg_may_change[9:16];
+   typedef struct        {
+      bit [31:0]         status_may_change;
+      bit [31:0]         status_high;
+      bit                reg_may_change[REG_SAVED_START:REG_SAVED_END-1];
    } status_check_spec_t;
 
-   task automatic check_status(input [31:0] reg_status_1,
-                               input [31:0] reg_saved_1[9:16],
-                               input status_check_spec_t spec);
-      reg [31:0]                           reg_status_2;
+   task automatic check_status
+     (input [31:0] reg_status_1,
+      input [31:0] reg_saved_1[REG_SAVED_START:REG_SAVED_END-1],
+      input status_check_spec_t spec);
+
+      reg [31:0] reg_status_2;
 
       read_status();
 
       #0;
 
-      assert(((reg_status ^ (reg_status_1 & ~32'h022f0000)) &
+      // The bits in STATUS_EVENT_BITS should be high only when the
+      // event has happened since the status register was read.  It is
+      // more appropriate to treat them as changed if they are high
+      // regardless of their state last time the register was read.
+
+      assert(((reg_status ^ (reg_status_1 & ~STATUS_EVENT_BITS)) &
               ~spec.status_may_change) == 0)
         else begin
            $displayh("Status", , reg_status_1, , reg_status);
@@ -318,43 +376,48 @@ module axi_sd_card_v1_0_tb();
         end
       assert((reg_status & spec.status_high) == spec.status_high)
         else $error("Bits in status expected to be set are not set");
-      foreach (spec.reg_may_change[i])
+      foreach (reg_saved[i])
         if (!spec.reg_may_change[i])
           assert(reg_saved[i] == reg_saved_1[i])
             else $error("Unexpected change in saved status register ", i);
 
-      read_reg(reg_status_2, 8);
+      read_reg(reg_status_2, OFFSET_STATUS);
 
-      assert((reg_status_2 & 32'h022f0000) == 0)
-        else $error("Status bits not cleared on read");
+      assert((reg_status_2 & STATUS_EVENT_BITS) == 0)
+        else $error("Event bits not cleared on read");
    endtask : check_status
 
-   task automatic test_command(input [5:0] index,
-                               input [31:0] arg,
-                               input acmd = 1'b0,
-                               input saved = 1'b0,
-                               input inject_crc_error = 1'b0,
-                               input no_response = 1'b0,
-                               input resp_is_r2 = 1'b0,
-                               input allow_resp_bad_crc = 1'b0,
-                               input allow_resp_bad_index = 1'b0,
-                               input status_check_spec_t
-                               check_spec = '{default: '0},
-                               input skip_status_check = 1'b0);
+   task automatic test_command
+     (input [5:0] index,
+      input [31:0] arg,
+      input acmd = 1'b0,
+      input saved = 1'b0,
+      input inject_crc_error = 1'b0,
+      input no_response = 1'b0,
+      input resp_is_r2 = 1'b0,
+      input allow_resp_bad_crc = 1'b0,
+      input allow_resp_bad_index = 1'b0,
+      input status_check_spec_t
+      check_spec = '{default: '0},
+      input skip_status_check = 1'b0);
 
-      logic [47:0]                   cmd_raw;
-      logic [6:0]                    crc_good;
+      logic [47:0] cmd_raw;
+      logic [6:0]  crc_good;
 
-      logic [31:0]                   reg_status_1, reg_saved_1[9:16];
+      logic [31:0] reg_status_1, reg_saved_1[REG_SAVED_START:REG_SAVED_END-1];
 
-      check_spec.status_may_change |= 32'h0004ff80;
-      check_spec.status_high |= 32'h00040000;
-      check_spec.reg_may_change[11] = 1'b1;
-      check_spec.reg_may_change[9] = 1'b1;
+      check_spec.status_may_change[STATUS_LAST_CMD_IGNORED] = 1'b1;
+      check_spec.status_may_change[STATUS_LAST_CMD_VALID] = 1'b1;
+      check_spec.status_may_change[STATUS_ANY_CMD_UNREAD] = 1'b1;
+      check_spec.status_may_change[STATUS_ANY_CMD_MISSED] = 1'b1;
+      check_spec.status_high[STATUS_ANY_CMD_UNREAD] = 1'b1;
+      check_spec.reg_may_change[OFFSET_CSR_READ] = 1'b1;
+      check_spec.reg_may_change[OFFSET_CMD_INDEX] = 1'b1;
+      check_spec.reg_may_change[OFFSET_LAST_CMD_ARG] = 1'b1;
       if (saved) begin
-         check_spec.status_may_change |= 32'h0001007f;
-         check_spec.status_high |= 32'h00010000;
-         check_spec.reg_may_change[10] = 1'b1;
+         check_spec.status_may_change[STATUS_SAVED_CMD_UNREAD] = 1'b1;
+         check_spec.status_high[STATUS_SAVED_CMD_UNREAD] = 1'b1;
+         check_spec.reg_may_change[OFFSET_SAVED_CMD_ARG] = 1'b1;
       end
 
       if (acmd && index != 55)
@@ -417,27 +480,32 @@ module axi_sd_card_v1_0_tb();
         check_status(reg_status_1, reg_saved_1, check_spec);
 
       if (!no_response) begin : check_registers
-         assert(reg_status[18] == 1'b1 &&
-                reg_status[15:14] == 2'b10 &&
-                (index == 55 || reg_status[13] == acmd) &&
-                reg_status[12:7] == index &&
-                reg_saved[11] == arg)
+         assert(reg_status[STATUS_LAST_CMD_VALID] == 1'b1 &&
+                reg_status[STATUS_LAST_CMD_IGNORED] == 1'b0 &&
+                (index == 55 || reg_saved[OFFSET_CMD_INDEX][14] == acmd) &&
+                reg_saved[OFFSET_CMD_INDEX][13:8] == index &&
+                reg_saved[OFFSET_LAST_CMD_ARG] == arg)
            else $error("Command status in registers differs from sent");
 
          if (saved) begin
-            assert(reg_status[16] == 1'b1 &&
-                   reg_status[6] == acmd &&
-                   reg_status[5:0] == index &&
-                   reg_saved[10] == arg)
+            assert(reg_saved[OFFSET_CMD_INDEX][6] == acmd &&
+                   reg_saved[OFFSET_CMD_INDEX][5:0] == index &&
+                   reg_saved[OFFSET_SAVED_CMD_ARG] == arg)
               else $error("Saved command status in registers differs from sent");
          end
-      end // block: check_registers
+         else begin
+            assert(reg_saved[OFFSET_CMD_INDEX][6:0] == reg_saved_1[OFFSET_CMD_INDEX][6:0])
+              else $error("Saved command index changed");
+         end
+      end : check_registers
    endtask : test_command
 
-   task automatic test_data_write(input [7:0] data[],
-                                  input [28:25] status_expected);
-      reg [7:0] data_read[];
-      reg [31:0] reg_status_1, reg_saved_1[9:16];
+   task automatic test_data_write
+     (input [7:0] data[],
+      input [31:0] status_expected = 'x);
+
+      logic [7:0]   data_read[];
+      logic [31:0]  reg_status_1, reg_saved_1[REG_SAVED_START:REG_SAVED_END-1];
 
       $write($time, , "Testing data write", );
       foreach (data[i])
@@ -454,18 +522,21 @@ module axi_sd_card_v1_0_tb();
          read_data_line(data_read, 8 * data.size());
 
          begin : start_write
-            // Add some delay so we know writing doesn't start until the
-            // start writing signal is received.  We can't wait until
-            // the input tvalid is high because before the start writing
-            // is received, the data in FIFO is held in reset which
-            // prevents tvalid to be high.
+            // Add enough delay before sending the start write signal so
+            // if the hardware starts writing to the DAT lines after the
+            // delay we know it won't start until the start write
+            // signal.  We can't wait until the tvalid input to the
+            // module from the FIFO is high because the FIFO is held in
+            // reset until the start write signal is received.
             repeat(128) @(posedge clock);
             repeat(64) @(negedge sd_clk);
             dat_low_allowed = dat_width_4 ? dat_low_any : dat_low_dat0;
             read_status();
-            write_reg(20, 32'h2);
+            write_reg(OFFSET_CONTROL, 32'h2);
          end
       join
+
+      repeat(64) @(negedge sd_clk);
 
       dat_low_allowed = dat_low_none;
 
@@ -476,8 +547,17 @@ module axi_sd_card_v1_0_tb();
 
       check_status(reg_status_1, reg_saved_1,
                    '{
-                     status_may_change: 32'h1e000000,
-                     reg_may_change: '{9: 1'b1, 16: 1'b1, default: 1'b0},
+                     status_may_change: ('h1 << STATUS_GOT_START_WRITE) |
+                     ('h1 << STATUS_BLOCK_LIMIT_USED) |
+                     ('h1 << STATUS_DAT_DONE) |
+                     ('h1 << STATUS_DAT_BLOCK_DONE) |
+                     ('h7 << STATUS_DAT_ERROR_CODE),
+                     reg_may_change: '{
+                                       OFFSET_CSR_READ: 1'b1,
+                                       OFFSET_BLOCK_LIMIT: 1'b1,
+                                       OFFSET_DAT_BLOCKS_TRANSFERRED: 1'b1,
+                                       default: 1'b0
+                                       },
                      default: '0
                      });
 
@@ -485,7 +565,7 @@ module axi_sd_card_v1_0_tb();
         else
           $error("Data written via AXI Stream does not match data read on DAT lines");
 
-      assert(reg_status[28:25] ==? status_expected)
+      assert(reg_status[18:12] ==? status_expected[18:12])
         else $error("DAT module status differs from expected");
    endtask : test_data_write
 
@@ -519,8 +599,8 @@ module axi_sd_card_v1_0_tb();
          // Write data and CRC
 
          if (dat_width_4) begin : write_4
-            reg [15:0] crc[4];
-            reg [0:2*data_size+15] line_data[4];
+            logic [15:0] crc[4];
+            logic [0:2*data_size+15] line_data[4];
 
             for (int i = 0; i < 8 * data_size; i++)
               line_data[i&3][i>>2] = data[i>>3][4^(i&7)];
@@ -543,8 +623,8 @@ module axi_sd_card_v1_0_tb();
                 dat_out[j] <= line_data[j][i];
          end : write_4
          else begin : write_1
-            reg [8*data_size+15:0] line_data;
-            reg [15:0]             crc_good, crc_actual;
+            logic [8*data_size+15:0] line_data;
+            logic [15:0]             crc_good, crc_actual;
 
             line_data[16+:8*data_size] = {>>{data}};
 
@@ -596,17 +676,19 @@ module axi_sd_card_v1_0_tb();
             write_data_block_line#(data_size)::write(response_tokens[0],
                                                      data,
                                                      inject_error);
-         end
+         end // else: !if(data_size > 512)
       endtask : write_data
 
-      static task automatic test_data_read(input [7:0] data[data_size],
-                                           input [28:25] status_expected,
-                                           input inject_error = 1'b0,
-                                           input interrupt = 1'b0);
-         reg [7:0] data_read[data_size];
-         reg [6:0] response_tokens[];
-         int data_read_cnt;
-         reg [31:0] reg_status_1, reg_saved_1[9:16];
+      static task automatic test_data_read
+        (input [7:0] data[data_size],
+         input [31:25] status_expected,
+         input inject_error = 1'b0,
+         input interrupt = 1'b0);
+
+         logic [7:0] data_read[data_size];
+         logic [6:0] response_tokens[];
+         int         data_read_cnt;
+         logic [31:0] reg_status_1, reg_saved_1[REG_SAVED_START:REG_SAVED_END-1];
 
          $write($time, , "Testing data read", );
          foreach (data[i])
@@ -629,7 +711,7 @@ module axi_sd_card_v1_0_tb();
          end
 
          read_status();
-         write_reg(20, 3'h4);
+         write_reg(OFFSET_CONTROL, 3'h4);
 
          // Read data
 
@@ -665,12 +747,14 @@ module axi_sd_card_v1_0_tb();
          repeat(64) @(negedge sd_clk);
 
          if (interrupt)
-           test_command(12, 0, .saved(1'b1),
+           test_command(12, 0, .saved(1'b0),
                         .check_spec('{
-                                      status_may_change: 32'h00003f80,
-                                      reg_may_change:
-                                      '{16: 1'b1, default: 1'b0},
-                                      default: '0}));
+                                      status_may_change: '{STATUS_GOT_NEW_CMD12: 1'b1,
+                                                           default: 1'b0},
+                                      status_high: '{STATUS_GOT_NEW_CMD12: 1'b1,
+                                                     default: 1'b0},
+                                      default: '0
+                                      }));
 
          // Wait till no transfer is available before quitting.  64
          // clocks without a data transfer is used as a sign for no more
@@ -686,7 +770,7 @@ module axi_sd_card_v1_0_tb();
          disable fork;
 
          read_status();
-         write_reg(20, 32'h1);
+         write_reg(OFFSET_CONTROL, 32'h1);
 
          // Give it some time to deassert the busy signal
          repeat(16) @(negedge sd_clk);
@@ -703,13 +787,27 @@ module axi_sd_card_v1_0_tb();
 
          check_status(reg_status_1, reg_saved_1,
                       '{
-                        status_may_change: 32'h1e053fff,
-                        reg_may_change: '{9: 1'b1, 10: 1'b1, 11: 1'b1, 16: 1'b1,
-                                          default: 1'b0},
+                        status_may_change: ('h1 << STATUS_LAST_CMD_IGNORED) |
+                        ('h1 << STATUS_LAST_CMD_VALID) |
+                        ('h1 << STATUS_SAVED_CMD_UNREAD) |
+                        ('h1 << STATUS_SAVED_CMD_MISSED) |
+                        ('h1 << STATUS_ANY_CMD_UNREAD) |
+                        ('h1 << STATUS_ANY_CMD_MISSED) |
+                        ('h1 << STATUS_GOT_NEW_CMD12) |
+                        ('h1 << STATUS_DAT_DONE) |
+                        ('h1 << STATUS_DAT_BLOCK_DONE) |
+                        ('h7 << STATUS_DAT_ERROR_CODE),
+                        reg_may_change: '{
+                                          OFFSET_CSR_READ: 1'b1,
+                                          OFFSET_CMD_INDEX: 1'b1,
+                                          OFFSET_SAVED_CMD_ARG: 1'b1,
+                                          OFFSET_LAST_CMD_ARG: 1'b1,
+                                          OFFSET_DAT_BLOCKS_TRANSFERRED: 1'b1,
+                                          default: 1'b0
+                                          },
                         default: '0
                         });
 
-         // Check the data
          if (!inject_error) begin : check_data
             assert(data_read_cnt == data_size)
               else $error("Timed out reading data");
@@ -717,7 +815,6 @@ module axi_sd_card_v1_0_tb();
               else $error("Data read from AXI-Stream does not match data written to SD bus");
          end : check_data
 
-         // Check the response tokens
          foreach (response_tokens[i])
            if (response_tokens[i] != (inject_error ? 7'b1101011 : 7'b1100101))
              begin
@@ -726,113 +823,166 @@ module axi_sd_card_v1_0_tb();
              end
 
          repeat(64) @(negedge sd_clk);
+
+         assert(reg_status[31:25] ==? status_expected)
+           else $error("DAT module status differs from expected");
       endtask : test_data_read
    endclass : test_data_read
 
    task automatic test_dat(input [7:0] data[2048]);
-      localparam status_check_spec_t check_spec = '{
-                                                    status_may_change:
-                                                    32'h00803f80,
-                                                    reg_may_change:
-                                                    '{16: 1'b1, default: 1'b0},
-                                                    default: '0
-                                                    };
-
+      status_check_spec_t check_spec;
       logic [31:0] offset_good, offset_bad;
+
+      check_spec = '{
+                     status_may_change: ('h1 << STATUS_GOT_NEW_CMD12) |
+                     ('h1 << STATUS_BLOCK_LIMIT_USED) |
+                     ('h1 << STATUS_DAT_DONE) |
+                     ('h1 << STATUS_DAT_BLOCK_DONE) |
+                     ('h7 << STATUS_DAT_ERROR_CODE),
+                     reg_may_change: '{
+                                       OFFSET_CSR_READ: 1'b1,
+                                       OFFSET_BLOCK_LIMIT: 1'b1,
+                                       OFFSET_DAT_BLOCKS_TRANSFERRED: 1'b1,
+                                       default: 1'b0
+                                       },
+                     default: '0
+                     };
 
       assert(randomize(offset_good) with { offset_good <= card_size - 4; });
       assert(randomize(offset_bad) with { offset_bad > card_size; });
 
       $display("Testing data writes");
 
+      check_spec.status_may_change[STATUS_GOT_START_WRITE] = 1'b1;
+      check_spec.status_may_change[STATUS_GOT_START_READ] = 1'b0;
+
       // Clear errors
       test_command(13, {rca, 16'h0}, .check_spec(check_spec));
 
       // Write a 32-bit block
       test_command(22, 0, .acmd(1'b1), .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h5);
-      test_data_write(data[0:3], 4'b0001);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h5);
+      test_data_write(data[0:3],
+        (1'h0 << STATUS_GOT_START_READ) |
+        (1'h0 << STATUS_GOT_START_WRITE) |
+        (1'h1 << STATUS_DAT_BLOCK_DONE) |
+        (1'h1 << STATUS_DAT_DONE) |
+        (3'h0 << STATUS_DAT_ERROR_CODE));
 
       // Test bad offset
       test_command(17, offset_bad, .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h4);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h4);
 
       // Write a full block
       test_command(17, offset_good, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h5);
-      test_data_write(data[0:511], 4'b0001);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h5);
+      test_data_write(data[0:511],
+        (1'h0 << STATUS_GOT_START_READ) |
+        (1'h0 << STATUS_GOT_START_WRITE) |
+        (1'h1 << STATUS_DAT_BLOCK_DONE) |
+        (1'h1 << STATUS_DAT_DONE) |
+        (3'h0 << STATUS_DAT_ERROR_CODE));
 
-      // Write 4 blocks without using block count
       test_command(18, offset_good, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h5);
-      test_data_write(data, 4'bxxx0);
-      test_command(12, 0, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[16] == 32'd4);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h5);
+      test_data_write(data,
+        (1'h0 << STATUS_GOT_START_READ) |
+        (1'h1 << STATUS_GOT_START_WRITE) |
+        (1'h1 << STATUS_DAT_BLOCK_DONE) |
+        (1'h0 << STATUS_DAT_DONE) |
+        (4'b0xxx << STATUS_DAT_ERROR_CODE));
+      test_command(12, 0, .saved(1'b0), .check_spec(check_spec));
+      assert(reg_saved[OFFSET_DAT_BLOCKS_TRANSFERRED] == 32'h4);
 
       // Write 4 blocks using block count
-      test_command(23, 4,
-                   .check_spec('{
-                                 status_may_change: 32'h1e800000,
-                                 status_high: '{23: 1'b1, default: 1'b0},
-                                 reg_may_change: '{14: 1'b1, 16: 1'b1,
-                                                   default: 1'b0}
-                                 }));
-      assert(reg_saved[14] == 32'd4);
+      test_command(23, 4, .check_spec(check_spec));
+      assert(reg_status[STATUS_BLOCK_LIMIT_USED] == 1'b1);
+      assert(reg_saved[OFFSET_BLOCK_LIMIT] == 32'd4);
       test_command(18, offset_good, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h5);
-      test_data_write(data, 4'b0001);
-      assert(reg_saved[16] == 32'd4);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h5);
+      test_data_write(data,
+        (1'h0 << STATUS_GOT_START_READ) |
+        (1'h0 << STATUS_GOT_START_WRITE) |
+        (1'h1 << STATUS_DAT_BLOCK_DONE) |
+        (1'h1 << STATUS_DAT_DONE) |
+        (3'h0 << STATUS_DAT_ERROR_CODE));
+      assert(reg_saved[OFFSET_DAT_BLOCKS_TRANSFERRED] == 32'h4);
 
       test_command(13, {rca, 16'h0},
-                   .check_spec('{
-                                 status_may_change: '{23: 1'b1, default: 1'b0},
-                                 status_high: '0,
-                                 reg_may_change: '{14: 1'b1, 16: 1'b1,
-                                                   default: 1'b0}
-                                 }));
-      assert(reg_saved[9][12:9] == 4'h4);
+        .check_spec('{
+                      status_may_change: '{
+                                           STATUS_BLOCK_LIMIT_USED: 1'b1,
+                                           default: 1'b0
+                                           },
+                      status_high: '0,
+                      reg_may_change: '{
+                                        OFFSET_BLOCK_LIMIT: 1'b1,
+                                        OFFSET_DAT_BLOCKS_TRANSFERRED: 1'b1,
+                                        default: 1'b0
+                                        }
+                      }));
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h4);
 
       $display("Testing data reads");
 
+      check_spec.status_may_change[STATUS_GOT_START_WRITE] = 1'b0;
+      check_spec.status_may_change[STATUS_GOT_START_READ] = 1'b1;
+
       // Test bad offset
       test_command(24, offset_bad, .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h4);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h4);
 
       // Read a block
       test_command(24, offset_good, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h6);
-      test_data_read#(512)::test_data_read(data[0:511], 4'b0001);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h6);
+      test_data_read#(512)::test_data_read(data[0:511],
+        (1'h0 << STATUS_GOT_START_READ) |
+        (1'h0 << STATUS_GOT_START_WRITE) |
+        (1'h1 << STATUS_DAT_BLOCK_DONE) |
+        (1'h1 << STATUS_DAT_DONE) |
+        (3'h0 << STATUS_DAT_ERROR_CODE));
 
       // Read 4 blocks without using block count
       test_command(25, offset_good, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h6);
-      test_data_read#(2048)::test_data_read(data, 4'bxxx0, .interrupt(1'b1));
-      assert(reg_saved[16] == 32'd4);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h6);
+      test_data_read#(2048)::test_data_read(data,
+        (1'h1 << STATUS_GOT_START_READ) |
+        (1'h0 << STATUS_GOT_START_WRITE) |
+        (1'h1 << STATUS_DAT_BLOCK_DONE) |
+        (1'h0 << STATUS_DAT_DONE) |
+        (4'b0xxx << STATUS_DAT_ERROR_CODE),
+        .interrupt(1'b1));
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h4);
 
       // Read 3 blocks using block count
-      test_command(23, 3,
-                   .check_spec('{
-                                 status_may_change: '{23: 1'b1, default: 1'b0},
-                                 status_high: '{23: 1'b1, default: 1'b0},
-                                 reg_may_change: '{14: 1'b1, 16: 1'b1,
-                                                   default: 1'b0}
-                                 }));
-      assert(reg_saved[14] == 32'd3);
+      test_command(23, 3, .check_spec(check_spec));
+      assert(reg_status[STATUS_BLOCK_LIMIT_USED] == 1'b1);
+      assert(reg_saved[OFFSET_BLOCK_LIMIT] == 32'd3);
       test_command(25, offset_good, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h6);
-      test_data_read#(1536)::test_data_read(data[0:1535], 4'b0001);
-      assert(reg_saved[16] == 32'd3);
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h6);
+      test_data_read#(1536)::test_data_read(data[0:1535],
+        (1'h0 << STATUS_GOT_START_READ) |
+        (1'h0 << STATUS_GOT_START_WRITE) |
+        (1'h1 << STATUS_DAT_BLOCK_DONE) |
+        (1'h1 << STATUS_DAT_DONE) |
+        (3'h0 << STATUS_DAT_ERROR_CODE));
+      assert(reg_saved[OFFSET_DAT_BLOCKS_TRANSFERRED] == 32'd3);
 
       // Make sure a CRC error is caught
       test_command(24, offset_good, .saved(1'b1), .check_spec(check_spec));
-      assert(reg_saved[9][12:9] == 4'h6);
-      test_data_read#(512)::test_data_read(data[0:511], 4'b0011,
-                                           .inject_error(1'b1));
+      assert(reg_saved[OFFSET_CSR_READ][12:9] == 4'h6);
+      test_data_read#(512)::test_data_read(data[0:511],
+        (1'h0 << STATUS_GOT_START_READ) |
+        (1'h0 << STATUS_GOT_START_WRITE) |
+        (2'b0x << STATUS_DAT_BLOCK_DONE) |
+        (1'h1 << STATUS_DAT_DONE) |
+        (3'h1 << STATUS_DAT_ERROR_CODE),
+        .inject_error(1'b1));
    endtask : test_dat
 
-   logic [31:0] cmd8_arg;
-   logic [31:0] ram_data[8];
-   logic [7:0]  test_data[2048];
+   logic [31:0]    cmd8_arg;
+   logic [31:0]    ram_data[8];
+   logic [7:0]     test_data[2048];
 
    task do_tests;
       repeat(128) @(posedge clock);
@@ -858,15 +1008,21 @@ module axi_sd_card_v1_0_tb();
       read_status();
 
       // Set card size
-      write_reg(18, card_size);
+      write_reg(OFFSET_SIZE, card_size);
 
       cmd8_arg[31:8] = 24'h1;
       assert(randomize(cmd8_arg[7:0]));
-      check_got_cmd8_low: assert(~reg_status[22]);
+      check_got_cmd8_low: assert(~reg_status[STATUS_GOT_CMD8]);
       test_command(8, cmd8_arg,
                    .check_spec('{
-                                 status_may_change: '{22: 1'b1, default: 1'b0},
-                                 status_high: '{22: 1'b1, default: 1'b0},
+                                 status_may_change: '{
+                                                      STATUS_GOT_CMD8: 1'b1,
+                                                      default: 1'b0
+                                                      },
+                                 status_high: '{
+                                                STATUS_GOT_CMD8: 1'b1,
+                                                default: 1'b0
+                                                },
                                  default: '0
                                  }));
       check_cmd8_arg: assert(resp.data[39:8] == cmd8_arg);
@@ -886,8 +1042,8 @@ module axi_sd_card_v1_0_tb();
 
          // Write to OCR
          if (i == 0)
-           write_reg(17, 32'hc0000000);
-      end
+           write_reg(OFFSET_OCR, 32'hc0000000);
+      end // block: test_acmd41
 
       sd_clock_slow = 1'b0;
 
@@ -914,7 +1070,7 @@ module axi_sd_card_v1_0_tb();
 
       assert(randomize(test_data));
 
-      test_dat(test_data);
+      // test_dat(test_data);
 
       test_command(6, 2, .acmd(1'b1));
       dat_width_4 = 1'b1;
@@ -934,14 +1090,14 @@ module axi_sd_card_v1_0_tb();
       mst_agent_0.start_master();
 
       axis_writer = new("Data writer",
-                        DUT.`BD_INST_NAME.axi4stream_vip_mst.inst.IF);
+        DUT.`BD_INST_NAME.axi4stream_vip_mst.inst.IF);
       axis_writer.vif_proxy.set_dummy_drive_type(XIL_AXI4STREAM_VIF_DRIVE_NONE);
       axis_writer.set_agent_tag("Data writer");
       axis_writer.set_verbosity(agent_verbosity);
       axis_writer.start_master();
 
       axis_reader = new("Data reader",
-                        DUT.`BD_INST_NAME.axi4stream_vip_slv.inst.IF);
+        DUT.`BD_INST_NAME.axi4stream_vip_slv.inst.IF);
       axis_reader.vif_proxy.set_dummy_drive_type(XIL_AXI4STREAM_VIF_DRIVE_NONE);
       axis_reader.set_agent_tag("Data reader");
       axis_reader.set_verbosity(agent_verbosity);

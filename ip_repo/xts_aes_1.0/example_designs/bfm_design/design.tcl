@@ -18,7 +18,7 @@ proc create_ipi_design { offsetfile design_name } {
     set_property -dict [ list \
 			     CONFIG.KEY_SIZE {256} \
 			     CONFIG.WORKER_COUNT {1} \
-			     CONFIG.TWEAK_WIDTH {32} \
+			     CONFIG.TWEAK_WIDTH {24} \
 			     CONFIG.DATA_UNIT_SIZE {128} \
 			    ] $xts_aes_0
 

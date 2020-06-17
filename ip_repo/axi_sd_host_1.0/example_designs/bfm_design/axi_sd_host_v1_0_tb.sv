@@ -10,6 +10,58 @@ import axi_sd_host_v1_0_bfm_1_axi4stream_vip_slv_0_pkg::*;
 module axi_sd_host_v1_0_tb();
    localparam agent_verbosity = 0;
 
+   // Register definitions
+
+   localparam REG_RESP = 0;
+
+   localparam REG_STATUS = 4;
+   localparam REG_STATUS_CMD_DONE = 0;
+   localparam REG_STATUS_DAT_DONE_NEW = 1;
+   localparam REG_STATUS_DAT_BLOCK_DONE = 2;
+   localparam REG_STATUS_DAT_BUSY_CLEARED_NEW = 3;
+   localparam REG_STATUS_CMD_ERR_INDEX = 4;
+   localparam REG_STATUS_CMD_ERR_CRC = 5;
+   localparam REG_STATUS_CMD_ERR_END_BIT = 6;
+   localparam REG_STATUS_CMD_ERR_TIMEOUT = 7;
+   localparam REG_STATUS_CMD_ISBUSY = 8;
+   localparam REG_STATUS_ENABLED = 9;
+   localparam REG_STATUS_DAT_DONE = 10;
+   localparam REG_STATUS_DAT_BUSY_CLEARED = 11;
+   localparam REG_STATUS_DAT_BLOCK_COUNT_SUCCESS_OVERFLOW = 12;
+   localparam REG_STATUS_DAT_STOP_CLOCK = 13;
+   localparam REG_STATUS_DAT_ERROR_CODE = 14;
+
+   localparam REG_DAT_BLOCK_COUNT_SUCCESS = 5;
+
+   localparam REG_SETTINGS = 8;
+   localparam REG_SETTINGS_CLK = 0;
+
+   localparam REG_INTR_EN = 9;
+
+   localparam REG_DAT_CTRL = 10;
+   localparam REG_DAT_CTRL_ENABLED = 0;
+   localparam REG_DAT_CTRL_KEEP_DATA = 1;
+   localparam REG_DAT_CTRL_READ_MODE = 2;
+   localparam REG_DAT_CTRL_SMALL_BLOCK = 3;
+   localparam REG_DAT_CTRL_BLOCK_COUNT_USED = 4;
+   localparam REG_DAT_CTRL_BLOCK_SIZE_EXP = 5; // 3 bits
+   localparam REG_DAT_BLOCK_COUNT_IN = 11;
+
+   localparam REG_CMD_ARG = 12;
+   localparam REG_CMD_REST = 13;
+   localparam REG_CMD_REST_INDEX = 0;
+   localparam REG_CMD_REST_EXP_R2 = 8;
+
+   // DAT error codes
+   localparam bit [3:0] DAT_ERROR_SUCCESS = 0;
+   localparam bit [3:0] DAT_ERROR_WRITE_NO_DATA = 1;
+   localparam bit [3:0] DAT_ERROR_WRITE_EARLY_BOUNDARY = 2;
+   localparam bit [3:0] DAT_ERROR_WRITE_LATE_BOUNDARY = 3;
+   localparam bit [3:0] DAT_ERROR_WRITE_RESP_TIMEOUT = 4;
+   localparam bit [3:0] DAT_ERROR_WRITE_BAD_RESP = 5;
+   localparam bit [3:0] DAT_ERROR_READ_DATA_NOT_ACCEPTED = 7;
+   localparam bit [3:0] DAT_ERROR_READ_BAD_CRC = 8;
+
    logic clock;
    logic resetn;
 
@@ -111,8 +163,8 @@ module axi_sd_host_v1_0_tb();
 
    task automatic read_data_line(output [7:0] data[],
                                  // Size in bits
-                       input int size,
-                       input [4:0] response = 5'b00101);
+                                 input int size,
+                                 input [4:0] response = 5'b00101);
       reg [1039:0]                 line_data[0:3];
       reg [4159:0]                 line_data_all;
 
@@ -220,7 +272,7 @@ module axi_sd_host_v1_0_tb();
    endclass : crc_dat
 
    task automatic write_resp(input [5:0] index,
-                   input [31:0] arg = 0);
+                             input [31:0] arg = 0);
       reg [47:0]                resp_raw;
       reg [6:0]                 checksum;
       integer                   i;
@@ -230,12 +282,12 @@ module axi_sd_host_v1_0_tb();
    endtask : write_resp
 
    task automatic send_cmd(input [31:0] index_rest,
-                 input [31:0] arg);
+                           input [31:0] arg);
       $display($time, , "Send command", , index_rest, , arg);
       fork
          begin
-            write_reg(11, arg);
-            write_reg(12, index_rest);
+            write_reg(REG_CMD_ARG, arg);
+            write_reg(REG_CMD_REST, index_rest);
          end
          read_cmd();
       join
@@ -246,7 +298,7 @@ module axi_sd_host_v1_0_tb();
    endtask : send_cmd
 
    task automatic write_reg(input int index,
-                  input [31:0] data);
+                            input [31:0] data);
       xil_axi_resp_t resp;
       mst_agent_0.AXI4LITE_WRITE_BURST(.addr(index << 2),
                                        .prot(2'b00),
@@ -255,8 +307,8 @@ module axi_sd_host_v1_0_tb();
       assert(resp == XIL_AXI_RESP_OKAY);
    endtask : write_reg
 
-   task automatic read_reg(output [31:0] data,
-                 input int index);
+   task automatic read_reg(input int index,
+                           output [31:0] data);
       xil_axi_resp_t resp;
       mst_agent_0.AXI4LITE_READ_BURST(.addr(index << 2),
                                       .prot(2'b00),
@@ -276,24 +328,24 @@ module axi_sd_host_v1_0_tb();
       // Wait until the command done bit is set
       timeout = $time + 1us;
       forever begin
-         read_reg(reg_status, 4);
-         if (reg_status[0])
+         read_reg(REG_STATUS, reg_status);
+         if (reg_status[REG_STATUS_CMD_DONE])
            break;
          if ($time > timeout)
            $error("Timed out waiting for command done bit");
       end
 
       // Check the command done bit is cleared
-      read_reg(reg_status_1, 4);
-      assert(~reg_status_1[0])
+      read_reg(REG_STATUS, reg_status_1);
+      assert(~reg_status_1[REG_STATUS_CMD_DONE])
         else $error("Command done bit not cleared on read");
 
       // Read the response only when the status bits indicate it is
       // renewed.  Else x bits may be read and the AXI protocol checker
       // does not like it.
-      if (~reg_status[5]) begin
+      if (~reg_status[REG_STATUS_CMD_ERR_TIMEOUT]) begin
          for (int i = 0; i < (isr2 ? 4 : 2); i++)
-           read_reg(reg_resp[i], i);
+           read_reg(REG_RESP + i, reg_resp[i]);
          if (!(isr2 ? 128'({>>{reg_resp}}) == resp_written[135:8] :
                {reg_resp[0][7:0], reg_resp[1]} == resp_written[47:8]))
            $error("Response in registers does not match response sent");
@@ -301,32 +353,61 @@ module axi_sd_host_v1_0_tb();
    endtask : read_resp_reg
 
    task automatic verify_dat_status(input done_expected,
-                                    input [3:0] error_expected = 4'h0);
+                                    input [31:0] block_count_expected,
+                                    input [3:0] error_expected =
+                                    DAT_ERROR_SUCCESS);
       reg [31:0] reg_status_1;
+      reg [31:0] reg_block_count_read;
 
-      read_reg(reg_status, 4);
-      assert(reg_status[12:9] == error_expected)
-        else $error("Got error from the DAT module: ", reg_status[12:9]);
-      assert(reg_status[1] == done_expected && reg_status[7] == done_expected)
+      read_reg(REG_STATUS, reg_status);
+      assert(reg_status[REG_STATUS_DAT_ERROR_CODE+:4] == error_expected)
+        else $error("Got error from the DAT module: ",
+                    reg_status[REG_STATUS_DAT_ERROR_CODE+:4]);
+      assert(reg_status[REG_STATUS_DAT_DONE_NEW] == done_expected &&
+             reg_status[REG_STATUS_DAT_DONE] == done_expected)
         else $error("DAT done status differs from expected");
 
-      read_reg(reg_status_1, 4);
-      assert(~reg_status_1[1])
+      read_reg(REG_STATUS, reg_status_1);
+      assert(~reg_status_1[REG_STATUS_DAT_DONE_NEW])
         else $error("DAT done status interrupt bit not cleared on read");
+
+      if (error_expected == DAT_ERROR_SUCCESS) begin
+         read_reg(REG_DAT_BLOCK_COUNT_SUCCESS, reg_block_count_read);
+         assert(reg_block_count_read == block_count_expected)
+           else $error("DAT block count is wrong");
+      end
    endtask : verify_dat_status
 
-   task automatic test_data_write(input [7:0] data[], input done);
+   task automatic test_data_write(input [7:0] data[],
+                                  input done = 1'b0,
+                                  input skip_axis_write = 1'b0,
+                                  input write_bad_token = 1'b0);
       reg [7:0] data_read[];
       reg [31:0] reg_status_1;
+      reg [4:0]  response_token;
 
       $write($time, , "Testing data write", );
       foreach (data[i])
         $writeh(data[i]);
       $display();
 
+      if (write_bad_token) begin
+         assert(std::randomize(response_token[4:1])
+                with { response_token != 5'b00101; });
+         response_token[0] = 1'b1;
+      end
+      else
+        response_token = 5'b00101;
+
       fork
-         write_data_axis(data);
-         read_data_line(data_read, 8 * data.size());
+         if (!skip_axis_write) begin
+            write_data_axis(data);
+            $display($time, , "Done writing on AXIS");
+         end
+         begin
+            read_data_line(data_read, 8 * data.size(), .response(response_token));
+            $display($time, , "Done reading from line");
+         end
       join
 
       $write($time, , "Got data", );
@@ -341,7 +422,9 @@ module axi_sd_host_v1_0_tb();
       // Add some delay for the DAT unit to settle.
       repeat(64) @(negedge sd_clk);
 
-      verify_dat_status(done);
+      verify_dat_status(done, (data.size() + 511) / 512,
+                        write_bad_token ? DAT_ERROR_WRITE_BAD_RESP :
+                        DAT_ERROR_SUCCESS);
    endtask : test_data_write
 
    virtual class write_data_block_line #(parameter data_size = 512);
@@ -394,16 +477,24 @@ module axi_sd_host_v1_0_tb();
    virtual class test_data_read #(parameter data_size = 512);
       local static task automatic write_data(input [7:0] data[data_size],
                                              input inject_error);
+         dat_low_allowed = dat_low_any;
+
          if (data_size > 512)
            for (int i = 0; i < data_size; i += 512)
              write_data_block_line#(512)::write(data[i+:512], inject_error);
          else
            write_data_block_line#(data_size)::write(data, inject_error);
+
+         dat_low_allowed = dat_low_none;
       endtask : write_data
 
       static task automatic test_data_read(input [7:0] data[data_size],
                                            input done,
-                                           input inject_error = 1'b0);
+                                           input inject_error = 1'b0,
+                                           input skip_line_write = 1'b0,
+                                           input skip_axis_read = 1'b0,
+                                           input [31:0] block_count = 'x,
+                                           input block_count_special = 1'b0);
          reg [7:0] data_read[data_size];
          int data_read_cnt;
 
@@ -412,73 +503,73 @@ module axi_sd_host_v1_0_tb();
            $writeh(data[i]);
          $display();
 
-         dat_low_allowed = dat_low_any;
-
          data_read_cnt = 0;
 
          repeat(64) @(negedge sd_clk);
 
-         // Drain any transactions in the queue
-         begin : drain_transactions
-            axi4stream_monitor_transaction trans;
-            while (axis_reader.monitor.item_collected_port.get_item_cnt())
-              axis_reader.monitor.item_collected_port.get(trans);
-         end
+         axis_reader.start_slave();
 
          // Read data
 
-         fork
-            begin : read
-               for (data_read_cnt = 0; data_read_cnt < data_size;
-                    data_read_cnt++) begin : read_tran
-                  logic [7:0] tran_data[1];
-                  axi4stream_monitor_transaction trans;
+         if (!skip_axis_read)
+           fork
+              begin : read
+                 for (data_read_cnt = 0; data_read_cnt < data_size;
+                      data_read_cnt++) begin : read_tran
+                    logic [7:0] tran_data[1];
+                    axi4stream_monitor_transaction trans;
 
-                  axis_reader.monitor.item_collected_port.get(trans);
-                  // Check tlast
-                  assert(trans.get_last() == ((data_read_cnt + 1) % 512 == 0 ||
-                                              data_read_cnt + 1 == data_size))
-                    else $error("TLAST differs from expected");
-                  // Read
-                  trans.get_data(tran_data);
-                  data_read[data_read_cnt] = tran_data[0];
-               end : read_tran
-            end : read
-            forever begin : send_tready
-               axi4stream_ready_gen ready_gen;
-               ready_gen = axis_reader.driver.create_ready("ready gen");
-               ready_gen.set_ready_policy(XIL_AXI4STREAM_READY_GEN_NO_BACKPRESSURE);
-               axis_reader.driver.send_tready(ready_gen);
-            end : send_tready
-         join_none
+                    axis_reader.monitor.item_collected_port.get(trans);
+                    // Check tlast
+                    assert(trans.get_last() ==
+                           ((data_read_cnt + 1) % 512 == 0 ||
+                            data_read_cnt + 1 == data_size))
+                      else $error("TLAST differs from expected");
+                    // Read
+                    trans.get_data(tran_data);
+                    data_read[data_read_cnt] = tran_data[0];
+                 end : read_tran
+              end : read
+
+              forever begin : send_tready
+                 axi4stream_ready_gen ready_gen;
+                 ready_gen = axis_reader.driver.create_ready("ready gen");
+                 ready_gen.set_ready_policy(XIL_AXI4STREAM_READY_GEN_NO_BACKPRESSURE);
+                 axis_reader.driver.send_tready(ready_gen);
+              end : send_tready
+           join_none
 
          // Write data
 
-         write_data(data, inject_error);
+         if (!skip_line_write)
+           write_data(data, inject_error);
 
          // Wait till no transfer is available before quitting.  64
          // clocks without a data transfer is used as a sign for no more
          // data.
 
          repeat(64) @(negedge sd_clk);
-         forever begin : wait_for_tran
-            int cnt1 = data_read_cnt;
-            repeat(64) @(posedge clock)
-              if (data_read_cnt != cnt1)
-                disable wait_for_tran;
-            break;
-         end : wait_for_tran
+         if (!skip_axis_read)
+           forever begin : wait_for_tran
+              int cnt1 = data_read_cnt;
+              repeat(64) @(posedge clock)
+                if (data_read_cnt != cnt1)
+                  disable wait_for_tran;
+              break;
+           end : wait_for_tran
+
          disable fork;
+         axis_reader.stop_slave();
 
-         dat_low_allowed = dat_low_none;
-
-         $write($time, , "Got data", );
-         for (int i = 0; i < data_read_cnt; i++)
-           $writeh(data_read[i]);
-         $display();
+         if (!skip_axis_read) begin
+            $write($time, , "Got data", );
+            for (int i = 0; i < data_read_cnt; i++)
+              $writeh(data_read[i]);
+            $display();
+         end
 
          // Check the data
-         if (!inject_error) begin : check_data
+         if (!(inject_error || skip_axis_read)) begin : check_data
             assert(data_read_cnt == data_size)
               else $error("Timed out reading data");
             assert(data_read == data)
@@ -487,7 +578,11 @@ module axi_sd_host_v1_0_tb();
 
          repeat(64) @(negedge sd_clk);
 
-         verify_dat_status(done, inject_error ? 4'h8 : 4'h0);
+         verify_dat_status(done,
+                           block_count_special ? block_count :
+                           (data_size + 511) / 512,
+                           inject_error ? DAT_ERROR_READ_BAD_CRC :
+                           DAT_ERROR_SUCCESS);
       endtask : test_data_read
    endclass : test_data_read
 
@@ -523,7 +618,6 @@ module axi_sd_host_v1_0_tb();
       axis_reader.vif_proxy.set_dummy_drive_type(XIL_AXI4STREAM_VIF_DRIVE_NONE);
       axis_reader.set_agent_tag("Data reader");
       axis_reader.set_verbosity(agent_verbosity);
-      axis_reader.start_slave();
    end // initial begin
 
    initial begin
@@ -549,7 +643,7 @@ module axi_sd_host_v1_0_tb();
          for (int i = 0; i < 3; i++) begin
             $display($time, , "Testing clock speed", i);
             sd_clock_check_en = 1'b0;
-            write_reg(8, i << 2);
+            write_reg(REG_SETTINGS, i << REG_SETTINGS_CLK);
             #20us;
             if (i == 0) begin
                // Clock is stopped
@@ -577,14 +671,14 @@ module axi_sd_host_v1_0_tb();
          send_cmd(0, 0);
          repeat(256) @(negedge sd_clk);
          read_resp_reg();
-         assert(reg_status[5])
+         assert(reg_status[REG_STATUS_CMD_ERR_TIMEOUT])
            else $error("Response timeout bit not set");
 
          // Command with response
          send_cmd(13, 32'h0000aaaa);
          write_resp(13, resp_arg);
          read_resp_reg();
-         assert(reg_status[5:2] == 4'b0000);
+         assert(reg_status[REG_STATUS_CMD_ERR_INDEX+:4] == 4'b0000);
 
          // Invalid CRC
          send_cmd(13, 32'h0000aaaa);
@@ -593,20 +687,20 @@ module axi_sd_host_v1_0_tb();
          write_resp_raw#()::write_resp_raw({2'h0, 6'd13, resp_arg, resp_crc,
                                             1'b1});
          read_resp_reg();
-         assert(reg_status[5:2] == 4'b0010);
+         assert(reg_status[REG_STATUS_CMD_ERR_INDEX+:4] == 4'b0010);
 
          // Invalid end bit
          send_cmd(13, 32'h0000aaaa);
          write_resp_raw#()::write_resp_raw({2'h0, 6'd13, resp_arg, resp_crc,
                                             1'b0});
          read_resp_reg();
-         assert(reg_status[5:2] ==? 4'b01x0);
+         assert(reg_status[REG_STATUS_CMD_ERR_INDEX+:4] ==? 4'b01x0);
 
          // Invalid index
          send_cmd(13, 32'h0000aaaa);
          write_resp(14, resp_arg);
          read_resp_reg();
-         assert(reg_status[5:2] == 4'b0001);
+         assert(reg_status[REG_STATUS_CMD_ERR_INDEX+:4] == 4'b0001);
 
          // R2
          resp_r2[127:120] = 8'h3f;
@@ -618,7 +712,7 @@ module axi_sd_host_v1_0_tb();
          write_resp_raw#(136)::write_resp_raw
            ({resp_r2, crc#(.data_size(120))::crc(resp_r2[119:0]), 1'b1});
          read_resp_reg(.isr2(1'b1));
-         assert(reg_status[5:2] == '0);
+         assert(reg_status[REG_STATUS_CMD_ERR_INDEX+:4] == 4'b0000);
 
          // Invalid CRC
          send_cmd('h100 | 2, 0);
@@ -628,7 +722,7 @@ module axi_sd_host_v1_0_tb();
          write_resp_raw#(136)::write_resp_raw
            ({resp_r2, resp_crc, 1'b1});
          read_resp_reg(.isr2(1'b1));
-         assert(reg_status[5:2] == 4'b0010);
+         assert(reg_status[REG_STATUS_CMD_ERR_INDEX+:4] == 4'b0010);
 
          repeat(64) @(negedge sd_clk);
       end : test_commands
@@ -650,51 +744,104 @@ module axi_sd_host_v1_0_tb();
          send_cmd(13, 32'h0000aaaa);
          write_resp(13, 0);
          read_resp_reg();
-         assert(reg_status[5:2] == 4'b0000);
+         assert(reg_status[REG_STATUS_CMD_ERR_INDEX+:4] == 4'b0000);
 
          // Write a 32-bit block
-         write_reg(9, 32'h35);
-         test_data_write(data[0:3], 1'b1);
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_SMALL_BLOCK) |
+                   (2 << REG_DAT_CTRL_BLOCK_SIZE_EXP));
+         test_data_write(data[0:3], .done(1'b1));
+
+         // Write a block and get bad response token, and retry
+         write_reg(REG_DAT_CTRL, 1 << REG_DAT_CTRL_ENABLED);
+         test_data_write(data[0:511], .done(1'b1), .write_bad_token(1'b1));
+         // Keep data.  Commands would be given to the card to restart
+         // the transfer.
+         write_reg(REG_DAT_CTRL, 1 << REG_DAT_CTRL_KEEP_DATA);
+         // Retry, this time without giving the data again
+         write_reg(REG_DAT_CTRL, (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_KEEP_DATA));
+         test_data_write(data[0:511], .skip_axis_write(1'b1));
 
          // Write 4 blocks
-         write_reg(9, 32'h1);
-         test_data_write(data, 1'b0);
+         write_reg(REG_DAT_CTRL, 1 << REG_DAT_CTRL_ENABLED);
+         test_data_write(data);
 
          // It should stop when the block count is reached
-         write_reg(10, 32'd4);
-         write_reg(9, 32'h9);
-         test_data_write(data, 1'b1);
+         write_reg(REG_DAT_BLOCK_COUNT_IN, 32'd4);
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_BLOCK_COUNT_USED));
+         test_data_write(data, .done(1'b1));
 
          // Send no response token, and make sure it's caught
-         write_reg(9, 32'h1);
+         write_reg(REG_DAT_CTRL, 1 << REG_DAT_CTRL_ENABLED);
          dat_low_allowed = dat_low_any;
          write_data_axis(data[0:511]);
          repeat(1088) @(negedge sd_clk);
          dat_low_allowed = dat_low_none;
-         read_reg(reg_status, 4);
-         assert(reg_status[12:9] == 4 && reg_status[7] && reg_status[1])
+         read_reg(REG_STATUS, reg_status);
+         assert(reg_status[REG_STATUS_DAT_ERROR_CODE+:4] == 4 &&
+                reg_status[REG_STATUS_DAT_DONE] &&
+                reg_status[REG_STATUS_DAT_DONE_NEW])
            else $error("DAT error code is not response timeout");
 
          $display("Testing data read");
 
          // Read a 32-bit block
-         write_reg(9, 32'h37);
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_READ_MODE) |
+                   (1 << REG_DAT_CTRL_SMALL_BLOCK) |
+                   (2 << REG_DAT_CTRL_BLOCK_SIZE_EXP));
          test_data_read#(4)::test_data_read(data[0:3], 1'b1);
 
          // Read 4 blocks
-         write_reg(9, 32'h3);
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_READ_MODE));
          test_data_read#(2048)::test_data_read(data, 1'b0);
 
          // Test with block count
-         write_reg(10, 32'd4);
-         write_reg(9, 32'hb);
+         write_reg(REG_DAT_BLOCK_COUNT_IN, 32'd4);
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_READ_MODE) |
+                   (1 << REG_DAT_CTRL_BLOCK_COUNT_USED));
          test_data_read#(2048)::test_data_read(data, 1'b1);
 
          // Make sure a CRC error is caught
-         write_reg(9, 32'h3);
-         test_data_read#(512)::test_data_read(.data(data[0:511]),
+
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_READ_MODE));
+         // Write a good block
+         test_data_read#(512)::test_data_read(data[512+:512],
+                                              .done(1'b0),
+                                              .skip_axis_read(1'b1));
+         // Write a bad block
+         test_data_read#(512)::test_data_read(data[0+:512],
                                               .done(1'b1),
-                                              .inject_error(1'b1));
+                                              .inject_error(1'b1),
+                                              .skip_axis_read(1'b1));
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_KEEP_DATA) |
+                   (1 << REG_DAT_CTRL_READ_MODE));
+         write_reg(REG_DAT_CTRL,
+                   (1 << REG_DAT_CTRL_ENABLED) |
+                   (1 << REG_DAT_CTRL_KEEP_DATA) |
+                   (1 << REG_DAT_CTRL_READ_MODE));
+         // Write another good block
+         test_data_read#(512)::test_data_read(data[1024+:512],
+                                              .done(1'b0),
+                                              .skip_axis_read(1'b1));
+         // Make sure only the good blocks are read
+         test_data_read#(1024)::test_data_read(.data(data[512+:1024]),
+                                               .done(1'b0),
+                                               .skip_line_write(1'b1),
+                                               .block_count(1),
+                                               .block_count_special(1'b1));
       end : test_dat
 
       repeat(2000) @(negedge sd_clk);

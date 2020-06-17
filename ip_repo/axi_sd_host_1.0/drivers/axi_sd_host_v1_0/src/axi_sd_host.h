@@ -5,54 +5,77 @@
 #include "xil_types.h"
 #include "xstatus.h"
 
-#define AXI_SD_HOST_RESP 0
+// 4 words of response
+#define SD_HOST_REG_RESP 0
 
-#define AXI_SD_HOST_STATUS 16
-#define AXI_SD_HOST_STATUS_CMD_DONE 0
-#define AXI_SD_HOST_STATUS_DAT_DONE_NEW 1
-#define AXI_SD_HOST_STATUS_CMD_ERR_INDEX 2
-#define AXI_SD_HOST_STATUS_CMD_ERR_CRC 3
-#define AXI_SD_HOST_STATUS_CMD_ERR_END_BIT 4
-#define AXI_SD_HOST_STATUS_CMD_ERR_TIMEOUT 5
-#define AXI_SD_HOST_STATUS_CMD_ISBUSY 6
-#define AXI_SD_HOST_STATUS_DAT_DONE 7
-#define AXI_SD_HOST_STATUS_DAT_STOP_CLOCK 8
-#define AXI_SD_HOST_STATUS_DAT_ERROR_CODE 9
-#define AXI_SD_HOST_DAT_ERROR_CODE_WIDTH 4
-// Success
-#define AXI_SD_HOST_DAT_ERROR_SUCCESS 0
-// No data is available after the start of a block
-#define AXI_SD_HOST_DAT_ERROR_WRITE_NO_DATA 1
-// tlast is asserted before a block boundary is expected
-#define AXI_SD_HOST_DAT_ERROR_WRITE_EARLY_BOUNDARY 2
-// tlast is not asserted when a block boundary is expected
-#define AXI_SD_HOST_DAT_ERROR_WRITE_LATE_BOUNDARY 3
-// The card has not sent a response after a block
-#define AXI_SD_HOST_DAT_ERROR_WRITE_RESP_TIMEOUT 4
-// The response is not 010
-#define AXI_SD_HOST_DAT_ERROR_WRITE_BAD_RESP 5
-// tready is low after the start of a block
-#define AXI_SD_HOST_DAT_ERROR_READ_DATA_NOT_ACCEPTED 7
-// Bad crc
-#define AXI_SD_HOST_DAT_ERROR_READ_BAD_CRC 8
+// Status
+// Reading the status clears interrupt bits.
+#define SD_HOST_REG_STATUS 16
+// Interrupt bits
+#define SD_HOST_REG_STATUS_CMD_DONE 0
+#define SD_HOST_REG_STATUS_DAT_DONE_NEW 1
+#define SD_HOST_REG_STATUS_DAT_BLOCK_DONE 2
+#define SD_HOST_REG_STATUS_DAT_BUSY_CLEARED_NEW 3
+// Other
+#define SD_HOST_REG_STATUS_CMD_ERR_INDEX 4
+#define SD_HOST_REG_STATUS_CMD_ERR_CRC 5
+#define SD_HOST_REG_STATUS_CMD_ERR_END_BIT 6
+#define SD_HOST_REG_STATUS_CMD_ERR_TIMEOUT 7
+#define SD_HOST_REG_STATUS_CMD_ISBUSY 8
+#define SD_HOST_REG_STATUS_DAT_ENABLED 9
+#define SD_HOST_REG_STATUS_DAT_DONE 10
+#define SD_HOST_REG_STATUS_DAT_BUSY_CLEARED 11
+#define SD_HOST_REG_STATUS_DAT_BLOCK_COUNT_SUCCESS_OVERFLOW 12
+#define SD_HOST_REG_STATUS_DAT_STOP_CLOCK 13
+#define SD_HOST_REG_STATUS_DAT_ERROR_CODE 14
+#define SD_HOST_REG_STATUS_CMD_ERR_ANY                                         \
+  ((1 << SD_HOST_REG_STATUS_CMD_ERR_INDEX) |                                   \
+   (1 << SD_HOST_REG_STATUS_CMD_ERR_CRC) |                                     \
+   (1 << SD_HOST_REG_STATUS_CMD_ERR_END_BIT) |                                 \
+   (1 << SD_HOST_REG_STATUS_CMD_ERR_TIMEOUT))
 
-#define AXI_SD_HOST_SETTINGS 32
-#define AXI_SD_HOST_SETTINGS_CLK 2
+// Number of blocks successfully transferred
+#define SD_HOST_REG_DAT_BLOCK_COUNT_SUCCESS 20
 
-#define AXI_SD_HOST_DAT_CTRL 36
-#define AXI_SD_HOST_DAT_CTRL_ENABLED 0
-#define AXI_SD_HOST_DAT_CTRL_READ_MODE 1
-#define AXI_SD_HOST_DAT_CTRL_SMALL_BLOCK 2
-#define AXI_SD_HOST_DAT_CTRL_BLOCK_COUNT_USED 3
-#define AXI_SD_HOST_DAT_CTRL_BLOCK_SIZE_EXP 4
+// DAT error codes
+#define SD_HOST_DAT_ERROR_WIDTH 4
+#define SD_HOST_DAT_ERROR_SUCCESS 0
+#define SD_HOST_DAT_ERROR_WRITE_NO_DATA 1
+#define SD_HOST_DAT_ERROR_WRITE_EARLY_BOUNDARY 2
+#define SD_HOST_DAT_ERROR_WRITE_LATE_BOUNDARY 3
+#define SD_HOST_DAT_ERROR_WRITE_RESP_TIMEOUT 4
+#define SD_HOST_DAT_ERROR_WRITE_BAD_RESP 5
+#define SD_HOST_DAT_ERROR_READ_DATA_NOT_ACCEPTED 7
+#define SD_HOST_DAT_ERROR_READ_BAD_CRC 8
 
-#define AXI_SD_HOST_DAT_BLOCK_COUNT 40
+// Settings
+#define SD_HOST_REG_SETTINGS 32
+// Clock selection takes 2 bits
+#define SD_HOST_REG_SETTINGS_CLK 0
+#define SD_HOST_REG_SETTINGS_CLK_STOP 0
+#define SD_HOST_REG_SETTINGS_CLK_400K 1
+#define SD_HOST_REG_SETTINGS_CLK_25M 2
 
-#define AXI_SD_HOST_CMD_ARG 44
+// Interrupt enable
+#define SD_HOST_REG_INTR_EN 36
 
-#define AXI_SD_HOST_CMD_REST 48
-#define AXI_SD_HOST_CMD_REST_INDEX 0
-#define AXI_SD_HOST_CMD_REST_EXP_R2 8
+// DAT control
+#define SD_HOST_REG_DAT_CTRL 40
+#define SD_HOST_REG_DAT_CTRL_ENABLED 0
+#define SD_HOST_REG_DAT_CTRL_KEEP_DATA 1
+#define SD_HOST_REG_DAT_CTRL_READ_MODE 2
+#define SD_HOST_REG_DAT_CTRL_SMALL_BLOCK 3
+#define SD_HOST_REG_DAT_CTRL_BLOCK_COUNT_USED 4
+#define SD_HOST_REG_DAT_CTRL_BLOCK_SIZE_EXP 5 // 3 bits
+#define SD_HOST_REG_DAT_BLOCK_COUNT_IN 44
+
+// Command
+// cmd_arg is the argument of the command.  cmd_rest is the index and
+// flags.  Writing to cmd_rest starts sending the command.
+#define SD_HOST_REG_CMD_ARG 48
+#define SD_HOST_REG_CMD_REST 52
+#define SD_HOST_REG_CMD_REST_INDEX 0
+#define SD_HOST_REG_CMD_REST_EXP_R2 8
 
 /**************************** Type Definitions *****************************/
 /**
@@ -69,7 +92,7 @@
  *
  * @note
  * C-style signature:
- * 	void AXI_SD_HOST_mWriteReg(u32 BaseAddress, unsigned RegOffset, u32
+ *      void AXI_SD_HOST_mWriteReg(u32 BaseAddress, unsigned RegOffset, u32
  * Data)
  *
  */
@@ -90,34 +113,10 @@
  *
  * @note
  * C-style signature:
- * 	u32 AXI_SD_HOST_mReadReg(u32 BaseAddress, unsigned RegOffset)
+ *      u32 AXI_SD_HOST_mReadReg(u32 BaseAddress, unsigned RegOffset)
  *
  */
 #define AXI_SD_HOST_mReadReg(BaseAddress, RegOffset)                           \
   Xil_In32((BaseAddress) + (RegOffset))
-
-/************************** Function Prototypes ****************************/
-/**
- *
- * Run a self-test on the driver/device. Note this may be a destructive test if
- * resets of the device are performed.
- *
- * If the hardware system is not built correctly, this function may never
- * return to the caller.
- *
- * @param   baseaddr_p is the base address of the AXI_SD_HOST instance to be
- * worked on.
- *
- * @return
- *
- *    - XST_SUCCESS   if all self-test code passed
- *    - XST_FAILURE   if any self-test code failed
- *
- * @note    Caching must be turned off for this function to work.
- * @note    Self test may fail if data memory and device are not on the same
- * bus.
- *
- */
-XStatus AXI_SD_HOST_Reg_SelfTest(void *baseaddr_p);
 
 #endif // AXI_SD_HOST_H

@@ -22,27 +22,6 @@ proc create_ipi_design { offsetfile design_name } {
 			    -vlnv user.org:user:axi_sd_host:1.0 \
 			    axi_sd_host_0]
 
-    # Input fifo
-    set axis_data_fifo_in [ create_bd_cell -type ip \
-				-vlnv xilinx.com:ip:axis_data_fifo:2.0 \
-				axis_data_fifo_in ]
-    set_property -dict [ list \
-			     CONFIG.FIFO_DEPTH {2048} \
-			     CONFIG.FIFO_MODE {2} \
-			    ] $axis_data_fifo_in
-
-    # Output fifo
-    set axis_data_fifo_out [ create_bd_cell -type ip \
-				 -vlnv xilinx.com:ip:axis_data_fifo:2.0 \
-				 axis_data_fifo_out ]
-    set_property -dict [ list \
-			     CONFIG.FIFO_DEPTH {2048} \
-			     CONFIG.FIFO_MODE {2} \
-			     CONFIG.HAS_PROG_FULL {1} \
-			     CONFIG.HAS_WR_DATA_COUNT {0} \
-			     CONFIG.PROG_FULL_THRESH {1025} \
-			    ] $axis_data_fifo_out
-
     # AXI4-LITE master
     set master_0 [ create_bd_cell -type ip \
 		       -vlnv xilinx.com:ip:axi_vip master_0]
@@ -83,51 +62,15 @@ proc create_ipi_design { offsetfile design_name } {
 			     CONFIG.USER_BITS_PER_BYTE {0} \
 			    ] $axi4stream_slv
 
-    # Connect the FIFOs' resets
-
-    connect_bd_net [get_bd_pins axi_sd_host_0/fifo_in_resetn] \
-	[get_bd_pins axis_data_fifo_in/s_axis_aresetn]
-    connect_bd_net [get_bd_pins axi_sd_host_0/fifo_out_resetn] \
-	[get_bd_pins axis_data_fifo_out/s_axis_aresetn]
-
     # AXI connection
     connect_bd_intf_net [get_bd_intf_pins master_0/M_AXI ] \
 	[get_bd_intf_pins axi_sd_host_0/S_AXI]
 
     # Data connections
     connect_bd_intf_net [get_bd_intf_pins axi4stream_vip_mst/M_AXIS] \
-	[get_bd_intf_pins axis_data_fifo_in/S_AXIS]
-    connect_bd_intf_net [get_bd_intf_pins axi_sd_host_0/data_in] \
-	[get_bd_intf_pins axis_data_fifo_in/M_AXIS]
+	[get_bd_intf_pins axi_sd_host_0/data_in]
     connect_bd_intf_net [get_bd_intf_pins axi_sd_host_0/data_out] \
-	[get_bd_intf_pins axis_data_fifo_out/S_AXIS]
-    connect_bd_intf_net [get_bd_intf_pins axis_data_fifo_out/M_AXIS] \
 	[get_bd_intf_pins axi4stream_vip_slv/S_AXIS]
-    connect_bd_net [get_bd_pins axi_sd_host_0/data_out_almostfull] \
-	[get_bd_pins axis_data_fifo_out/prog_full]
-
-    # The input FIFO is reset when the dat module's control register is
-    # written to.  The FIFO's TREADY may be high when held in reset.
-    # AXI stream transactions may take place at this time when the data
-    # will be discarded.  TREADY is forced low when reset.
-    set fifo_in_tready_gate [ create_bd_cell -type ip\
-				  -vlnv xilinx.com:ip:util_vector_logic:2.0 \
-				  fifo_in_tready_gate ]
-    set_property -dict [ list \
-			     CONFIG.C_SIZE {1} \
-			    ] $fifo_in_tready_gate
-    connect_bd_net [get_bd_pins axis_data_fifo_in/s_axis_tready] \
-	[get_bd_pins fifo_in_tready_gate/Op1]
-    connect_bd_net [get_bd_pins axi_sd_host_0/fifo_in_resetn] \
-	[get_bd_pins fifo_in_tready_gate/Op2]
-    connect_bd_net [get_bd_pins axi4stream_vip_mst/m_axis_tready] \
-	[get_bd_pins fifo_in_tready_gate/Res]
-    connect_bd_net [get_bd_pins axi4stream_vip_mst/m_axis_tdata] \
-	[get_bd_pins axis_data_fifo_in/s_axis_tdata]
-    connect_bd_net [get_bd_pins axi4stream_vip_mst/m_axis_tlast] \
-	[get_bd_pins axis_data_fifo_in/s_axis_tlast]
-    connect_bd_net [get_bd_pins axi4stream_vip_mst/m_axis_tvalid] \
-	[get_bd_pins axis_data_fifo_in/s_axis_tvalid]
 
     # Connections to outside the block design
     connect_bd_intf_net [get_bd_intf_ports SD_CARD] \
@@ -138,8 +81,6 @@ proc create_ipi_design { offsetfile design_name } {
 	[get_bd_pins axi4stream_vip_mst/aclk] \
 	[get_bd_pins axi4stream_vip_slv/aclk] \
 	[get_bd_pins axi_sd_host_0/clk] \
-	[get_bd_pins axis_data_fifo_in/s_axis_aclk] \
-	[get_bd_pins axis_data_fifo_out/s_axis_aclk] \
 	[get_bd_pins master_0/aclk]
     connect_bd_net [get_bd_ports ARESETN] \
 	[get_bd_pins axi4stream_vip_mst/aresetn] \

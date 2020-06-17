@@ -56,6 +56,16 @@ module xts_aes_v1_0_tb();
                         };
 `endif // !`ifdef KEY_SIZE_512
 
+   localparam DATA_UNIT_SIZE = 128;
+
+   // Register addresses
+   localparam REG_BLOCK_POS = 0;
+   localparam REG_STATUS = 16;
+   localparam REG_STATUS_GOT_KEY = 0;
+   localparam REG_STATUS_EN = 1;
+   localparam REG_STATUS_DECRYPT = 2;
+   localparam REG_KEYS = 512;
+
    virtual class aes_utils_key_size
      extends aes_utils::with_key_size#(
 `ifdef KEY_SIZE_512
@@ -144,14 +154,14 @@ module xts_aes_v1_0_tb();
    endtask : read_data
 
    task automatic test_data(input [7:0] data_in[], data_out_exp[],
-                            input [31:0] tweak,
+                            input [31:0] blk_offset,
                             input decrypt);
       logic [7:0] data_out[$];
 
       // Set tweak
-      write_reg(0, tweak);
+      write_reg(REG_BLOCK_POS, blk_offset);
       // Set mode and enable
-      write_reg(16, '{1: 1'b1, 2: decrypt, default: 1'b0});
+      write_reg(REG_STATUS, '{1: 1'b1, 2: decrypt, default: 1'b0});
 
       fork
          write_data(data_in);
@@ -206,6 +216,9 @@ module xts_aes_v1_0_tb();
       foreach (test_vectors[i]) begin : test_single_vector
          logic [31:0] status;
          logic [7:0]  ptx[], ctx[];
+         int          offset_whole;
+
+         offset_whole = DATA_UNIT_SIZE * test_vectors[i].sequence_number;
 
          // Read data
 
@@ -222,18 +235,33 @@ module xts_aes_v1_0_tb();
             $displayh("Key", , key);
 
             for (int k = 0; k < aes_utils_key_size::EXPANDED_KEY_WORDS; k++)
-              write_reg(512 + 256 * j + 4 * k, key[k]);
+              write_reg(REG_KEYS + 256 * j + 4 * k, key[k]);
          end
 
-         read_reg(16, status);
+         read_reg(REG_STATUS, status);
          check_got_key: assert(status[0])
            else $error("Got key bit is low after key is updated");
 
          // Encrypt
-         test_data(ptx, ctx, test_vectors[i].sequence_number, 1'b0);
-
+         test_data(ptx, ctx, offset_whole, 1'b0);
          // Decrypt
-         test_data(ctx, ptx, test_vectors[i].sequence_number, 1'b1);
+         test_data(ctx, ptx, offset_whole, 1'b1);
+
+         // Test starting from the middle of block
+         if ($size(ptx) >= 16 * DATA_UNIT_SIZE) begin : test_part
+            int offset_part;
+            logic [7:0] ptx_part[], ctx_part[];
+            offset_part = unsigned'($random()) % DATA_UNIT_SIZE;
+            ptx_part = new[$size(ptx)-16*offset_part];
+            foreach (ptx_part[i])
+              ptx_part[i] = ptx[16*offset_part+i];
+            ctx_part = new[$size(ctx)-16*offset_part];
+            foreach (ctx_part[i])
+              ctx_part[i] = ctx[16*offset_part+i];
+
+            test_data(ptx_part, ctx_part, offset_whole + offset_part, 1'b0);
+            test_data(ctx_part, ptx_part, offset_whole + offset_part, 1'b1);
+         end // block: test_part
       end // block: test_single_vector
 
       #1000 $finish;
